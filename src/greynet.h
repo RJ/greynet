@@ -44,8 +44,9 @@ public:
     }
     
     bool new_incoming_connection( connection_ptr conn );
-    bool new_outgoing_connection( connection_ptr conn, boost::asio::ip::tcp::endpoint &endpoint );
+    void new_outgoing_connection( connection_ptr conn );
     void expect_ident( message_ptr msgp, connection_ptr conn, bool incoming );
+    void send_ident( connection_ptr conn );
     void connection_terminated(connection_ptr conn);
     void message_received( message_ptr msgp, connection_ptr conn );
     void handle_query(connection_ptr conn, message_ptr msgp);

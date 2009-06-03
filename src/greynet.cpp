@@ -15,6 +15,8 @@
 #include "playdar/playdar_request.h"
 #include "playdar/auth.hpp"
 
+#include "greynet_messages.hpp"
+
 #define GREYNET_PORT 60211
 
 //#include "servent.h"
@@ -46,6 +48,7 @@ bool greynet::init(pa_ptr pap)
     
     // start io_services:
     cout << "Greynet router coming online on port " <<  port <<endl;
+    cout << "Greynet build date: " << __DATE__ << " " << __TIME__ << endl;
     
     for (std::size_t i = 0; i < 1; ++i)
     {
@@ -80,18 +83,15 @@ greynet::~greynet() throw()
 void
 greynet::start_resolving(boost::shared_ptr<ResolverQuery> rq)
 {
-    using namespace json_spirit;
-    Object jq = rq->get_json();
-    ostringstream querystr;
-    write( jq, querystr );
-    message_ptr msg( new GeneralMessage(QUERY, querystr.str()) );
+    cout << "greynet::start_resolving..." << endl;
+    message_ptr msg( new QueryMessage(rq) );
     m_router->send_all( msg );
 }
 
 bool 
 greynet::new_incoming_connection( connection_ptr conn )
 {
-    cout << "Protocol::new_incoming_connection " << conn->str() << endl;
+    cout << "greynet::new_incoming_connection " << conn->str() << endl;
     // first thing to expect is an ident msg, so set the msg handler to one 
     // that expects it, and kills the connection otherwise.
     conn->push_message_received_cb( 
@@ -99,13 +99,13 @@ greynet::new_incoming_connection( connection_ptr conn )
     return true;
 }
 
-bool 
-greynet::new_outgoing_connection( connection_ptr conn, boost::asio::ip::tcp::endpoint &endpoint )
+void 
+greynet::new_outgoing_connection( connection_ptr conn )
 {
-    cout << "Protocol::new_outgoing_connection " << conn->str() << endl;
+    cout << "greynet::new_outgoing_connection " << conn->str() << endl;
     conn->push_message_received_cb( 
         boost::bind( &greynet::expect_ident, this, _1, _2, false) );
-    return true;
+    send_ident( conn );
 }
 
 /// inserted as msg handler for new connection
@@ -119,21 +119,36 @@ greynet::expect_ident( message_ptr msgp, connection_ptr conn, bool incoming )
         conn->fin();
         return;
     }
-    cout << "Got IDENT from new connection" << endl;
+    cout << "Got IDENT from new connection: " 
+         << msgp->payload_str() << endl;
     
-    // .... do some stuff ....
-    // .... auth them or boot them ....
+    if( false ) // TODO validate the IDENT msg / auth code / whatever
+    {
+        cout << "Invalid ident/auth from incoming connection. closing." << endl;
+        conn->fin();
+        return;
+    }
+    
+    // if the other end initiated the connection, and IDENTed, we should now
+    // send them our IDENT message
+    if( incoming ) send_ident( conn );
+    
+    // now the connection is considered ready to handle normal messages:
+    conn->set_ready( true );
+    conn->set_name( msgp->payload_str() );
     
     // remove our custom msg rcvd callback:
     conn->pop_message_received_cb();
     
-    // if incoming connection, send them our ident, now that we recognise them
-    if( incoming )
-    {
-        string idstr = "ident string here"; //TODO
-        message_ptr msg( new GeneralMessage(IDENT, idstr) );
-        conn->async_write( msg );
-    }
+    cout << "Connection ready to rock: " << conn->str() << endl;
+}
+
+void
+greynet::send_ident( connection_ptr conn )
+{
+    cout << "Sending our IDENT.." << endl;
+    message_ptr msg( new IdentMessage( m_pap->hostname()) );
+    conn->async_write( msg );
 }
 
 void
@@ -271,12 +286,7 @@ greynet::send_response( query_uid qid,
     cout << "got send_response with qid:" << qid << "and url:" << rip->url() << endl;
     if(origin_conn)
     {
-        Object response;
-        response.push_back( Pair("qid", qid) );
-        response.push_back( Pair("result", rip->get_json()) );
-        ostringstream ss;
-        write( response, ss );
-        message_ptr resp(new GeneralMessage(QUERYRESULT, ss.str()));
+        message_ptr resp(new QueryResultMessage(qid, rip));
         origin_conn->async_write( resp );
     }
 }
