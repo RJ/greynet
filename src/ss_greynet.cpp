@@ -1,130 +1,136 @@
-#include "ss_darknet.h"
-
-#include "playdar/types.h"
-#include "darknet.h"
+#include "ss_greynet.h"
 
 #include <boost/thread/thread.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/condition.hpp>
+#include <boost/algorithm/string.hpp>
 #include <deque>
+
+using namespace std;
 
 namespace playdar {
 namespace resolvers {
         
         
-DarknetStreamingStrategy::DarknetStreamingStrategy(darknet* darknet, connection_ptr conn, std::string sid)
-    : m_conn(conn), m_sid(sid), m_abort(false)
+ss_greynet::ss_greynet(greynet* g, connection_ptr conn, const std::string &sid)
+    : m_greynet(g), m_conn(conn), m_sid(sid)
+    /* m_abort(false),*/ 
 {
-    m_darknet = darknet;
+    cout << "CTOR ss_greynet" << endl;
     reset();
+    
 }
 
-
-DarknetStreamingStrategy::~DarknetStreamingStrategy()
+ss_greynet::~ss_greynet()
 {
-    m_abort = true;
-    cout << "DTOR " << debug() << endl;
+    //m_abort = true;
+    cout << "DTOR ss_greynet " << debug() << endl;
 }
 
-DarknetStreamingStrategy(const DarknetStreamingStrategy& other);
-        : m_curl(0)
-        , m_url(other.url())
-        , m_thread(0)
-        , m_abort(false)
+ss_greynet::ss_greynet(const ss_greynet& other)
+        :   m_greynet(other.protocol()),
+            m_conn(other.conn()),
+            m_sid(other.sid())
+            //m_abort(false),
+            
 {
-//        reset();
+        reset();
 }
     
-boost::shared_ptr<DarknetStreamingStrategy> 
-DarknetStreamingStrategy::factory(std::string url, playdar::resolvers::darknet* darknet)
+boost::shared_ptr<ss_greynet> 
+ss_greynet::factory(std::string url, playdar::resolvers::greynet* g)
 {
-    cout << "in DSS::factory with url:" << url << endl;
-    size_t offset = 10; // skip 'darknet://'
+    cout << "in ss_greynet::factory with url:" << url << endl;
+    size_t offset = 10; // skip 'greynet://'
     size_t offset2 = url.find( "/", offset );
-    if( offset2 == string::npos ) return boost::shared_ptr<DarknetStreamingStrategy>();
+    if( offset2 == string::npos ) return boost::shared_ptr<ss_greynet>();
     string username = url.substr(offset, offset2 - offset ); // username/sid/<sid>
     string sid = url.substr( offset2 + 5, url.length() - (offset2 + 5) );
-    cout << "got username in darknet_ss::factory: " << username << " and sid: " << sid << endl;
-    std::map<std::string, connection_ptr_weak> map = darknet->connections();
-    std::map<std::string, connection_ptr_weak>::iterator iter = map.begin();
-    for(;iter!=map.end();iter++)
-        cout << "got possible username in connection map:" << iter->first << endl;
-    connection_ptr con = darknet->connections()[username].lock();
-    
-    return boost::shared_ptr<DarknetStreamingStrategy>(new DarknetStreamingStrategy(darknet, con, sid ) );
+    cout << "got username in greynet_ss::factory: " << username << " and sid: " << sid << endl;
+    connection_ptr conn = g->get_conn( username );
+    if( conn )
+        return boost::shared_ptr<ss_greynet>(new ss_greynet(g, conn, sid ));
+    else
+        return boost::shared_ptr<ss_greynet>();
 }
 
-size_t 
-DarknetStreamingStrategy::read_bytes(char* buf, size_t size)
-{
-    if(!m_active) start();
-    boost::mutex::scoped_lock lk(m_mutex);
-    // Wait until data available:
-    while( (m_data.empty() || m_data.size()==0) && !m_finished )
-    {
-        //cout << "Waiting for SIDDATA message..." << endl;
-        m_cond.wait(lk);
-    }
-    //cout << "Got data to send, max available: "<< m_data.size() << endl;
-    if(!m_data.empty())
-    {
-        int sent = 0;
-        for(; !m_data.empty() && (sent < size); sent++)
-        {
-            *(buf+sent) = m_data.front();
-            m_data.pop_front();
-        }
-        if(sent) return sent;
-        assert(0);
-        return 0;
-    }
-    else if(m_finished)
-    {
-        cout << "End of stream marker reached. "
-        << m_numrcvd << " bytes rcvd total" << endl;
-        cout << "Current size of output buffer: " << m_data.size() << endl;
-        assert(m_data.size()==0);
-        reset();
-        return 0;
-    }
-    else
-    {
-        assert(0); // wtf.
-        return 0;
-    }
-}
+
 
 void 
-DarknetStreamingStrategy::start()
+ss_greynet::start_reply(AsyncAdaptor_ptr aa)
 {
     reset();
-    if(!m_conn->alive())
+    if(!m_conn->ready())
     {
-        cout << "Darknet connection went away :(" << endl;
+        cout << "Greynet connection went away :(" << endl;
         throw;
     }
-    m_active = true;
-    // setup a timer to abort if we don't get data quick enough?
-    m_darknet->start_sidrequest( m_conn, m_sid, 
-                                 boost::bind(&DarknetStreamingStrategy::siddata_handler, 
-                                             this, _1)
-                                             ); 
+    m_aa = aa;
+    //m_aa->set_finished_cb( boost::bind(&ss_greynet::write_ending, shared_from_this()) );
+    // request stream start:
+    m_greynet->start_sidrequest(m_conn, m_sid, shared_from_this());
 }
 
 bool 
-DarknetStreamingStrategy::siddata_handler(const char * payload, size_t len)
+ss_greynet::siddata_handler(const char * payload, size_t len)
 {
-    boost::mutex::scoped_lock lk(m_mutex);
-    enqueue( string( payload, len ) );
-    m_numrcvd+=toread;
-    if(toread == 0)
+    
+    if( len == 0 )
     {
-        cout << "last SIDDATA msg has arrived ("
-             << m_numrcvd <<" bytes total)." << endl;
+        cout << "last SIDDATA msg has arrived" << endl;
         m_finished = true;
+        m_aa->write_finish();
+    }
+    else
+    {
+        // our async delegate knows what to do with the data...
+        m_aa->write_content(payload, len);
     }
     return true;
 }
+
+void
+ss_greynet::sidheaders_handler(message_ptr msgp)
+{
+    vector<string> lines;
+    vector<string> parts;
+    const string p = msgp->payload_str();
+    boost::split(lines, p, boost::is_any_of("\n"));
+    BOOST_FOREACH(string line, lines)
+    {
+        parts.clear();
+        boost::split(parts, line, boost::is_any_of("\t"));
+        if(parts.size() == 2)
+        {
+            cout << "Header line: " << line << endl;
+            if( parts[0] == "status" )
+            {
+                int code = atoi(parts[1].c_str());
+                m_aa->set_status_code( code );
+                if( code != 200 )
+                {
+                    cout << "Remote end gave status code: " << code << " aborting." << endl;
+                    m_aa->write_cancel();
+                    return;
+                }
+                continue;
+            }
+            if( parts[0] == "mime-type" )
+            {
+                m_aa->set_mime_type( parts[1] );
+                continue;
+            }
+            if( parts[0] == "content-length" )
+            {
+                int len = atoi(parts[1].c_str());
+                m_aa->set_content_length( len );
+                continue;
+            }
+        }
+        cout << "UNHANDLED line" << endl;
+    }
+}
+
 
 }
 }

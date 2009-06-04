@@ -1,8 +1,8 @@
 #ifndef __LIBF2F_GREYNET_MESSAGE_H__
 #define __LIBF2F_GREYNET_MESSAGE_H__
 
+#include "playdar/resolver_query.hpp"
 #include "playdar/playdar_plugin_include.h"
-
 #include "libf2f/message.h"
 
 #define PING            0
@@ -11,14 +11,18 @@
 #define QUERY           3
 #define QUERYRESULT     4
 #define QUERYCANCEL     5
+#define SIDREQUEST      6
+#define SIDDATA         7
+#define SIDFAIL         8
+#define SIDHEADERS      9
 
 class PongMessage : public libf2f::Message
 {
 public:
-    PongMessage()
+    PongMessage(const std::string& uuid)
     {
         libf2f::message_header h;
-        memcpy( &h.guid, std::string(GENUUID).data(), 36 );
+        memcpy( &h.guid, uuid.data(), 36 );
         h.type = PONG;
         h.ttl  = 1;
         h.hops = 0;
@@ -31,10 +35,10 @@ public:
 class PingMessage : public libf2f::Message
 {
 public:
-    PingMessage()
+    PingMessage(const std::string& uuid)
     {
         libf2f::message_header h;
-        memcpy( &h.guid, std::string(GENUUID).data(), 36 );
+        memcpy( &h.guid, uuid.data(), 36 );
         h.type = PING;
         h.ttl  = 1;
         h.hops = 0;
@@ -47,10 +51,10 @@ public:
 class IdentMessage : public libf2f::Message
 {
 public:
-    IdentMessage(const std::string &name)
+    IdentMessage(const std::string &name, const std::string& uuid)
     {
         libf2f::message_header h;
-        memcpy( &h.guid, std::string(GENUUID).data(), 36 );
+        memcpy( &h.guid, uuid.data(), 36 );
         h.type = IDENT;
         h.ttl  = 1;
         h.hops = 0;
@@ -64,10 +68,10 @@ public:
 class QueryMessage : public libf2f::Message
 {
 public:
-    QueryMessage(playdar::rq_ptr rq)
+    QueryMessage(playdar::rq_ptr rq, const std::string& uuid)
     {
         libf2f::message_header h;
-        memcpy( &h.guid, rq->id().c_str(), 36 );
+        memcpy( &h.guid, uuid.data(), 36 );
         h.type = QUERY;
         h.ttl  = 1;
         h.hops = 0;
@@ -87,10 +91,10 @@ public:
 class QueryResultMessage : public libf2f::Message
 {
 public:
-    QueryResultMessage(playdar::query_uid qid, playdar::ri_ptr rip)
+    QueryResultMessage(playdar::query_uid qid, playdar::ri_ptr rip, const std::string& uuid)
     {
         libf2f::message_header h;
-        memcpy( &h.guid, rip->id().c_str(), 36 );
+        memcpy( &h.guid, uuid.data(), 36 );
         h.type = QUERYRESULT;
         h.ttl  = 1;
         h.hops = 0;

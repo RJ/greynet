@@ -3,136 +3,168 @@
 
 #include "playdar/streaming_strategy.h"
 
-#include "msgs.h"
-#include "servent.h"
 #include <boost/thread/thread.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/condition.hpp>
 #include <deque>
 
+#include "libf2f/router.h"
+#include "libf2f/protocol.h"
+
+#include "greynet.h"
+#include "greynet_messages.hpp"
+
+using namespace libf2f;
+using namespace std;
+
 namespace playdar {
 namespace resolvers {
+
+class greynet; 
+
+typedef boost::function< void(boost::asio::const_buffer)> WriteFunc;
+
+class greynet_asyncadaptor 
+:   public playdar::AsyncAdaptor,
+    public boost::enable_shared_from_this<greynet_asyncadaptor>
+{
+public:
+    greynet_asyncadaptor(connection_ptr conn, source_uid sid)
+        :  m_sid(sid), m_conn(conn), m_sentfirst(false),
+            m_status(200), m_mimetype("application/binary"), m_contentlength(0)
+    {
+    }
+
+    virtual void write_content(const char *buffer, int size)
+    {
+        if( !m_sentfirst )
+        {
+            send_headers();
+            m_sentfirst = true;
+        }
+        message_ptr msg( new GeneralMessage(SIDDATA, std::string(buffer, size), m_sid) );
+        m_conn->async_write( msg );
+    }
     
-class DarknetStreamingStrategy : public StreamingStrategy
+    virtual void write_finish()
+    {
+        std::cout << "greynet_asyncadaptor write_finish" << endl;
+        // send empty siddata to indicate finished, for now.
+        write_content((const char*)0, 0 );
+    }
+
+    virtual void write_cancel()
+    {
+        std::cout << "greynet_asyncadaptor write_cancel" << endl;
+        message_ptr msg( new GeneralMessage(SIDFAIL, "", m_sid) );
+        m_conn->async_write( msg );
+    }
+
+    virtual void set_content_length(int contentLength)
+    {
+        m_contentlength = contentLength;
+    }
+
+    virtual void set_mime_type(const std::string& mimetype)
+    {
+        m_mimetype = mimetype;
+    }
+
+    virtual void set_status_code(int status)
+    {
+        m_status = status;
+    }
+
+    virtual void set_finished_cb(boost::function<void(void)> cb)
+    {
+        
+    }
+    
+private:
+    void send_headers()
+    {
+        std::ostringstream os;
+        os  << "status\t" << m_status << "\n"
+            << "mime-type\t" << m_mimetype << "\n"
+            << "content-length\t" << m_contentlength << "\n";
+        std::cout << "Sending headers:\n" << os.str();
+        message_ptr msgp(new GeneralMessage(SIDHEADERS, os.str(), m_sid));
+        m_conn->async_write( msgp );
+    }
+    
+    source_uid m_sid;
+    libf2f::connection_ptr m_conn;
+    bool m_sentfirst; // did we already send first data message?
+    int m_status;
+    std::string m_mimetype;
+    int m_contentlength;
+};
+
+
+
+///
+
+
+class ss_greynet 
+:   public StreamingStrategy, 
+    public boost::enable_shared_from_this<ss_greynet>
 {
 public:
 
-    DarknetStreamingStrategy(darknet * darknet, 
-                             connection_ptr conn, 
-                             std::string sid);
+    ss_greynet(greynet * g, connection_ptr conn, const std::string &sid);
+    ss_greynet(const ss_greynet& other);
+    ~ss_greynet() ;
     
-    ~DarknetStreamingStrategy() ;
+    static boost::shared_ptr<ss_greynet> factory(std::string url, playdar::resolvers::greynet* g);
     
-    /// copy constructor, used by get_instance()
-    DarknetStreamingStrategy(const DarknetStreamingStrategy& other);
-    
-    static boost::shared_ptr<DarknetStreamingStrategy> factory(std::string url, darknet * darknet);
-    
-    
-    size_t read_bytes(char * buf, size_t size);
-    
-    string debug()
+    std::string debug()
     { 
-        ostringstream s;
-        s<< "DarknetStreamingStrategy(from:" << m_conn->username() << " sid:" << m_sid << ")";
+        std::ostringstream s;
+        s<< "ss_greynet(from:" << m_conn->name() << " sid:" << m_sid << ")";
         return s.str();
     }
     
-    void reset() 
+    void reset()
     {
-        m_active = false;
+        //m_active = false;
         m_finished = false;
-        m_numrcvd=0;
-        m_data.clear();
+        //m_numrcvd=0;
+        //m_data.clear();
     }
     
-     // tell peer to start sending us data.
-    void start();
+    std::string mime_type() { return "audio/mpeg"; }
+    //int content_length();
     
+    void start_reply(AsyncAdaptor_ptr aa);
     bool siddata_handler(const char * payload, size_t len);
-
-    std::string mime_type() { return "dont/know"; }
+    void sidheaders_handler(message_ptr msgp);
     
-    bool async_delegate(WriteFunc writefunc)
-    {
-        if (!writefunc) {
-            // aborted by the client side.
-            m_abort = true;
-            m_wf = 0;
-            return false;
-        }
-
-        if (m_abort) {
-            m_wf = 0;
-            return false;
-        }
-
-        m_wf = writefunc;
-
-        if(!m_connected) connect();
-        if(!m_connected)
-        {
-            std::cout << "ERROR: connect failed in httpss." << std::endl;
-            if( m_curl ) curl_easy_cleanup( m_curl );
-            reset();
-            m_wf = 0;
-            return false;
-        }
-
-        {
-            boost::lock_guard<boost::mutex> lock(m_mutex);
-
-            if (m_writing && m_buffers.size()) {
-                // previous write has completed:
-                m_buffers.pop_front();
-                m_writing = false;
-            }
-
-            if (!m_writing && m_buffers.size()) {
-                // write something new
-                m_writing = true;
-                m_wf(boost::asio::const_buffer(m_buffers.front().data(), m_buffers.front().length()));
-            }
-        }
-
-        bool result =  m_writing || !m_curl_finished;
-        if (result == false) {
-            m_wf = 0;
-        }
-        return result;
-    }
-    
+    connection_ptr conn() const { return m_conn; }
+    greynet * protocol() const { return m_greynet; }
+    const std::string& sid() const { return m_sid; }
     
 private:
-    darknet * m_darknet;
+
+    AsyncAdaptor_ptr m_aa;
+    
+    greynet* m_greynet;
     connection_ptr m_conn;
     std::string m_sid;
 
-    boost::mutex m_mutex;
-    boost::condition m_cond;
+   // boost::mutex m_mutex;
+   // boost::condition m_cond;
 
-    deque< char > m_data;   //output buffer
-    unsigned int m_numrcvd; //bytes recvd so far
+   // std::deque< char > m_data;   //output buffer
+   // unsigned int m_numrcvd; //bytes recvd so far
     bool m_finished;        //EOS reached?
-    bool m_active;
+   // bool m_active;
     
     
-    /////
-    void enqueue(const std::string& s)
-    {
-        boost::lock_guard<boost::mutex> lock(m_mutex);
-        m_buffers.push_back(s);
-        if (!m_writing) {
-            m_writing = true;
-            m_wf(boost::asio::const_buffer(m_buffers.front().data(), m_buffers.front().length()));
-        }
-    }
-
-    WriteFunc m_wf;     // keep a hold of the write func to keep the connection alive.
-    boost::mutex m_mutex;
-    bool m_writing;
-    bool m_abort;
-    std::list<std::string> m_buffers;
+   // boost::mutex m_mutex;
+   // bool m_writing;
+   // bool m_abort;
+   // std::list<std::string> m_buffers;
+    
     
 };
 

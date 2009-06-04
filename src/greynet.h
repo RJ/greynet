@@ -11,17 +11,24 @@
 #include <vector>
 #include <map>
 
-#include "playdar/playdar_plugin_include.h"
-
 #include "libf2f/router.h"
 #include "libf2f/protocol.h"
+
+
+#include "greynet_messages.hpp"
+#include "playdar/playdar_plugin_include.h"
+#include "ss_greynet.h"
 
 using namespace libf2f; // pff
 
 namespace playdar { 
 namespace resolvers { 
 
-class greynet : public ResolverPlugin<greynet>, public libf2f::Protocol
+class ss_greynet;
+
+class greynet 
+:   public ResolverPlugin<greynet>, 
+    public libf2f::Protocol
 {
 public:
 
@@ -56,6 +63,11 @@ public:
                      query_uid qid);
     void send_response( query_uid qid, boost::shared_ptr<ResolvedItem> rip);
     void handle_queryresult(connection_ptr conn, message_ptr msgp);
+    bool handle_sidrequest(connection_ptr conn, message_ptr msg);
+    bool handle_siddata(connection_ptr conn, message_ptr msg);
+    void handle_sidheaders(connection_ptr conn, message_ptr msgp);
+    
+    void start_sidrequest(connection_ptr conn, source_uid sid, boost::shared_ptr<ss_greynet> ss);
     
     void set_query_origin(query_uid qid, connection_ptr conn)
     {
@@ -66,16 +78,12 @@ public:
         }
         catch(...){}
     }
-    /*
+    
+    connection_ptr get_conn( const std::string & name );
+    
     virtual std::map< std::string, boost::function<ss_ptr(std::string)> >
-    get_ss_factories()
-    {
-        // return our darknet ss
-        std::map< std::string, boost::function<ss_ptr(std::string)> > facts;
-        facts[ "darknet" ] = boost::bind( &DarknetStreamingStrategy::factory, _1, this );
-        return facts;
-    }
-    */
+    get_ss_factories();
+    
     
     connection_ptr get_query_origin(query_uid qid)
     {
@@ -109,7 +117,10 @@ private:
 
     // source of queries, so we know how to reply.
     std::map< query_uid, connection_ptr_weak > m_qidorigins;
-    std::map< source_uid,  boost::function<bool (const char * payload, size_t len)> > m_sidhandlers;
+    
+    std::map< source_uid,  boost::shared_ptr<ss_greynet> > m_sid2ss;
+    
+    std::set< std::string > m_seen_guids;
     
 };
 
