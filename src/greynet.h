@@ -69,6 +69,9 @@ public:
     
     void start_sidrequest(connection_ptr conn, source_uid sid, boost::shared_ptr<ss_greynet> ss);
     
+    void unregister_sidtransfer( connection_ptr conn, const source_uid &sid );
+    void register_sidtransfer( connection_ptr conn, const source_uid &sid );
+    
     void set_query_origin(query_uid qid, connection_ptr conn)
     {
         assert( m_qidorigins.find(qid) == m_qidorigins.end() );
@@ -121,6 +124,10 @@ private:
     std::map< source_uid,  boost::shared_ptr<ss_greynet> > m_sid2ss;
     
     std::set< std::string > m_seen_guids;
+    
+    // track connection -> sids that are actively being transferred so that
+    // if a connection dies, we can cancel the sid transfers immediately
+    std::multimap< connection_ptr, source_uid > m_conn2sid;
     
 };
 

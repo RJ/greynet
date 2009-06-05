@@ -155,6 +155,48 @@ void
 greynet::connection_terminated(connection_ptr conn)
 {
     cout << "Connection terminated: " << conn->str() << endl;
+    // clear and cancel any active transfers on this connection.
+    // gather a list of active sids first, then cancel them.
+    // the cancel callback on the SS will unregister them with us.
+    vector<source_uid> sids;
+    multimap< connection_ptr, source_uid >::iterator it;
+    for ( it=m_conn2sid.find(conn) ; it != m_conn2sid.end(); it++ )
+        sids.push_back( (*it).second );
+        
+    if( sids.size() == 0 )
+    {
+        cout << "No active transfers on this connection." << endl;
+        return;
+    }
+    cout << "Cancelling " << sids.size() << " active transfers." << endl;
+    BOOST_FOREACH( source_uid s, sids )
+    {
+        cout << "* Cancelling transfer: " << s << endl;
+        m_sid2ss[s]->cancel_handler();
+    }
+}
+
+void
+greynet::unregister_sidtransfer( connection_ptr conn, const source_uid &sid )
+{
+    cout << "greynet::unregister_sidtransfer" << endl;
+    multimap< connection_ptr, source_uid >::iterator it;
+    while( (it = m_conn2sid.find(conn)) != m_conn2sid.end() )
+    {
+        if( (*it).second == sid )
+        {        
+            m_conn2sid.erase( it );
+            return;
+        } 
+    }
+}
+
+void
+greynet::register_sidtransfer( connection_ptr conn, const source_uid &sid )
+{
+    cout << "greynet::register_sidtransfer" << endl;
+    // TODO assert it's not already registered?
+    m_conn2sid.insert( pair<connection_ptr, source_uid>(conn,sid) );
 }
 
 /// Only called once auth/ident has completed
@@ -377,9 +419,10 @@ greynet::start_sidrequest(connection_ptr conn, source_uid sid,
                           boost::shared_ptr<ss_greynet> ss)
 {
     m_sid2ss[sid] = ss;
+    register_sidtransfer( conn, sid );
     message_ptr msg(new GeneralMessage(SIDREQUEST, sid, m_pap->gen_uuid()));
     conn->async_write( msg );
-    // the ss_greynet should get callbacks fired as data arrives.
+    // the ss_greynet will get callbacks fired as data arrives.
 }
 
 

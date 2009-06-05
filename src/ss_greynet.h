@@ -136,6 +136,7 @@ public:
     void start_reply(AsyncAdaptor_ptr aa);
     bool siddata_handler(const char * payload, size_t len);
     void sidheaders_handler(message_ptr msgp);
+    void cancel_handler(); //called if connection terminates
     
     connection_ptr conn() const { return m_conn; }
     greynet * protocol() const { return m_greynet; }

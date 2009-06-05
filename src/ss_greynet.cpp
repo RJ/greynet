@@ -90,6 +90,14 @@ ss_greynet::siddata_handler(const char * payload, size_t len)
     return true;
 }
 
+void 
+ss_greynet::cancel_handler()
+{
+    cout << "ss_greynet::cancel_handler fired." << endl;
+    m_aa->write_cancel();
+    m_greynet->unregister_sidtransfer( conn(), sid() );
+}
+
 void
 ss_greynet::sidheaders_handler(message_ptr msgp)
 {
@@ -111,7 +119,7 @@ ss_greynet::sidheaders_handler(message_ptr msgp)
                 if( code != 200 )
                 {
                     cout << "Remote end gave status code: " << code << " aborting." << endl;
-                    m_aa->write_cancel();
+                    cancel_handler();
                     return;
                 }
                 continue;
