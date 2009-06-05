@@ -161,6 +161,9 @@ greynet::connection_terminated(connection_ptr conn)
 void
 greynet::message_received( message_ptr msgp, connection_ptr conn )
 {
+    cout << "greynet::message_received from " << conn->str() 
+         << " " << msgp->str() << endl;
+             
     // ignore if the msg guid is a dupe
     // but allow dupes for streams (all msgs of one stream have same sid)
     switch( msgp->type() )
@@ -403,7 +406,6 @@ greynet::handle_sidrequest(connection_ptr conn, message_ptr msg)
     ss->start_reply( aptr );
     return true;
 }
-
 
 bool
 greynet::handle_siddata(connection_ptr conn, message_ptr msgp)

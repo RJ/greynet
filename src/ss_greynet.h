@@ -33,6 +33,7 @@ public:
         :  m_sid(sid), m_conn(conn), m_sentfirst(false),
             m_status(200), m_mimetype("application/binary"), m_contentlength(0)
     {
+    ggHack=0;
     }
 
     virtual void write_content(const char *buffer, int size)
@@ -42,6 +43,7 @@ public:
             send_headers();
             m_sentfirst = true;
         }
+        if(++ggHack == 100) throw;
         message_ptr msg( new GeneralMessage(SIDDATA, std::string(buffer, size), m_sid) );
         m_conn->async_write( msg );
     }
@@ -81,6 +83,8 @@ public:
     }
     
 private:
+    int ggHack;
+
     void send_headers()
     {
         std::ostringstream os;
@@ -126,14 +130,8 @@ public:
     
     void reset()
     {
-        //m_active = false;
         m_finished = false;
-        //m_numrcvd=0;
-        //m_data.clear();
     }
-    
-    std::string mime_type() { return "audio/mpeg"; }
-    //int content_length();
     
     void start_reply(AsyncAdaptor_ptr aa);
     bool siddata_handler(const char * payload, size_t len);
@@ -144,28 +142,11 @@ public:
     const std::string& sid() const { return m_sid; }
     
 private:
-
     AsyncAdaptor_ptr m_aa;
-    
     greynet* m_greynet;
     connection_ptr m_conn;
     std::string m_sid;
-
-   // boost::mutex m_mutex;
-   // boost::condition m_cond;
-
-   // std::deque< char > m_data;   //output buffer
-   // unsigned int m_numrcvd; //bytes recvd so far
     bool m_finished;        //EOS reached?
-   // bool m_active;
-    
-    
-   // boost::mutex m_mutex;
-   // bool m_writing;
-   // bool m_abort;
-   // std::list<std::string> m_buffers;
-    
-    
 };
 
 }}
