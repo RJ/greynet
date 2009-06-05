@@ -66,6 +66,7 @@ public:
     bool handle_sidrequest(connection_ptr conn, message_ptr msg);
     bool handle_siddata(connection_ptr conn, message_ptr msg);
     void handle_sidheaders(connection_ptr conn, message_ptr msgp);
+    void handle_sidfail(connection_ptr conn, message_ptr msgp);
     
     void start_sidrequest(connection_ptr conn, source_uid sid, boost::shared_ptr<ss_greynet> ss);
     
@@ -106,6 +107,10 @@ public:
     
     bool anon_http_handler(const playdar_request&, playdar_response&, playdar::auth&);
                            
+    boost::shared_ptr<boost::asio::io_service> get_io_service() const
+    {
+        return m_io_service;
+    }
 protected:
     virtual ~greynet() throw();
     

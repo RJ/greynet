@@ -85,7 +85,8 @@ greynet::start_resolving(boost::shared_ptr<ResolverQuery> rq)
 {
     cout << "greynet::start_resolving..." << endl;
     message_ptr msg( new QueryMessage(rq, m_router->gen_uuid()) );
-    m_router->send_all( msg );
+    connection_ptr qorigin = get_query_origin( rq->id() );
+    m_router->foreach_conns_except( boost::bind(&Connection::async_write, _1, msg), qorigin );
 }
 
 bool 
@@ -176,6 +177,7 @@ greynet::connection_terminated(connection_ptr conn)
     }
 }
 
+/// currently the ss_greynet calls this when transfer is over or cancelled.
 void
 greynet::unregister_sidtransfer( connection_ptr conn, const source_uid &sid )
 {
@@ -244,6 +246,7 @@ greynet::message_received( message_ptr msgp, connection_ptr conn )
         
         case QUERYCANCEL:
             //handle_querycancel(conn,msgp);
+            cout << "querycancel is not currently handled" << endl; //TODO
             break;
             
         case SIDREQUEST:
@@ -258,6 +261,10 @@ greynet::message_received( message_ptr msgp, connection_ptr conn )
             handle_sidheaders(conn,msgp);
             break;
             
+        case SIDFAIL:
+            handle_sidfail(conn,msgp);
+            break;   
+        
         default:
             cout << "UNKNOWN MSG! " << msgp->str() << endl;
     }
@@ -476,6 +483,19 @@ greynet::handle_sidheaders(connection_ptr conn, message_ptr msgp)
     }
     // TODO locking for sid2ss
     m_sid2ss[sid]->sidheaders_handler( msgp );
+}
+
+void
+greynet::handle_sidfail(connection_ptr conn, message_ptr msgp)
+{
+    source_uid sid = msgp->guid();
+    if(m_sid2ss.find(sid) == m_sid2ss.end())
+    {
+        return;
+    }
+    // TODO locking for sid2ss
+    cout << "SIDFAIL received." << endl;
+    m_sid2ss[sid]->cancel_handler();
 }
 
 std::map< std::string, boost::function<ss_ptr(std::string)> >

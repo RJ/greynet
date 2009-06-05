@@ -16,6 +16,11 @@
 #define SIDFAIL         8
 #define SIDHEADERS      9
 
+/// TODO msg abstraction/oo-ness is half-assed atm.
+/// maybe we should be passing a MsgFactory to the router, then just have one
+/// polymorphic call to message_received(<msgtype> msgp). 
+/// either way, we need a big switch statement for msg types somewhere tho :|
+
 class PongMessage : public libf2f::Message
 {
 public:

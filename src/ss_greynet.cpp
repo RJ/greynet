@@ -61,15 +61,29 @@ void
 ss_greynet::start_reply(AsyncAdaptor_ptr aa)
 {
     reset();
+    m_aa = aa;
     if(!m_conn->ready())
     {
         cout << "Greynet connection went away :(" << endl;
-        throw;
+        cancel_handler();
+        return;
     }
-    m_aa = aa;
-    //m_aa->set_finished_cb( boost::bind(&ss_greynet::write_ending, shared_from_this()) );
     // request stream start:
     m_greynet->start_sidrequest(m_conn, m_sid, shared_from_this());
+    // if we don't see the headers soon, give up:
+    m_timer=boost::shared_ptr<boost::asio::deadline_timer>
+            (new boost::asio::deadline_timer( *(m_greynet->get_io_service()) ));
+    m_timer->expires_from_now(boost::posix_time::milliseconds(5000));
+    m_timer->async_wait(boost::bind(&ss_greynet::timeout_cb, this,
+                                boost::asio::placeholders::error));
+}
+
+void
+ss_greynet::timeout_cb(const boost::system::error_code& e)
+{
+    if(e) return;
+    cout << "Timeout waiting on sid headers to arrive." << endl;
+    cancel_handler();
 }
 
 bool 
@@ -101,6 +115,7 @@ ss_greynet::cancel_handler()
 void
 ss_greynet::sidheaders_handler(message_ptr msgp)
 {
+    m_timer->cancel(); 
     vector<string> lines;
     vector<string> parts;
     const string p = msgp->payload_str();
