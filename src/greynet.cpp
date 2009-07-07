@@ -13,14 +13,10 @@
 
 #include "playdar/resolver_query.hpp"
 #include "playdar/playdar_request.h"
-#include "playdar/auth.hpp"
+#include "playdar/auth.h"
 
-
-
+// default port for f2f mesh
 #define GREYNET_PORT 60210
-
-//#include "servent.h"
-//#include "ss_greynet.h"
 
 using namespace std;
 using namespace json_spirit;
@@ -57,28 +53,124 @@ bool greynet::init(pa_ptr pap)
     }
  
     // get peers: TODO support multiple/list from config
-    string remote_ip = pap->get<string>("plugins.greynet.peerip","");
+    string remote_ip = m_pap->get<string>("plugins.greynet.peerip","");
     if(remote_ip!="")
     {
-        unsigned short remote_port = pap->get<int>
-                                     ("plugins.greynet.peerport",GREYNET_PORT);
-
-        cout << "Attempting peer connect: " 
-             << remote_ip << ":" << remote_port << endl;
-        boost::asio::ip::address_v4 ipaddr =
-            boost::asio::ip::address_v4::from_string(remote_ip);
-        boost::asio::ip::tcp::endpoint ep(ipaddr, remote_port);
-        m_router->connect_to_remote(ep);
+        connect_to_peer( remote_ip,
+                         m_pap->get<int>
+                            ("plugins.greynet.peerport",GREYNET_PORT) 
+                       );
     }
+    
+    jabber_start(   m_pap->get<string>("plugins.greynet.jid",""),
+                    m_pap->get<string>("plugins.greynet.password","") );
+    
     return true;
 }
 
 greynet::~greynet() throw()
 {
     cout << "DTOR greynet" << endl;
+    m_jbot->stop();
+    m_jbot_thread->join();
+    
     m_router->stop();
+    m_io_service->stop();
     m_threads.join_all();
 }
+
+void
+greynet::connect_to_peer(const string& remote_ip, unsigned short remote_port)
+{
+    map<string,string> props;
+    connect_to_peer( remote_ip, remote_port, props );
+}
+
+void
+greynet::connect_to_peer(const string& remote_ip, unsigned short remote_port, map<string,string> props)
+{
+    cout << "Attempting peer connect: " 
+            << remote_ip << ":" << remote_port << endl;
+    boost::asio::ip::address_v4 ipaddr =
+        boost::asio::ip::address_v4::from_string(remote_ip);
+    boost::asio::ip::tcp::endpoint ep(ipaddr, remote_port);
+    m_router->connect_to_remote(ep, props);
+}
+
+/// begin jaber stuff
+void
+greynet::jabber_start(const string& jid, const string& pass)
+{
+    if( jid.empty() || pass.empty() )
+    {
+        cerr << "no jid+pass specified, jabber bot not starting.\n" << endl;
+        return;
+    }
+    // start xmpp connection in new thread:
+    m_jbot = boost::shared_ptr<jbot>(new jbot(jid, pass));
+    m_jbot->set_msg_received_callback( boost::bind(&greynet::jabber_msg_received, this, _1, _2) );
+    m_jbot->set_new_peer_callback( boost::bind(&greynet::jabber_new_peer, this, _1) );
+    m_jbot_thread = boost::shared_ptr<boost::thread>
+                        (new boost::thread(boost::bind(&jbot::start, m_jbot)));
+
+}
+
+void
+greynet::jabber_msg_received(const string& msg, const string& jid)
+{
+    cout << "Msg from " << jid << " = " << msg << endl;
+    // is this a new peer announcement?
+    using namespace json_spirit;
+    Value mv;
+    if( !read(msg, mv) || mv.type() != obj_type )
+    {
+        cout << "Dropping msg, not valid json" << endl;
+        return;
+    }
+    Object o = mv.get_obj();
+    map<string,Value> m;
+    obj_to_map(o,m);
+    // TODO better validation here:
+    if( m.find("playdar-greynet") == m.end() ||
+        m.find("peer_ip") == m.end() ||
+        m.find("cookie") == m.end() )
+    {
+        cout << "Missing fields, invalid." << endl;
+        return;
+    }
+    string peerip = m["peer_ip"].get_str();
+    int peerport = m["peer_port"].get_int();
+    cout << "Jabber msg means we'll connect to: " << peerip << ":" << peerport << endl;
+    map<string,string> props;
+    props["cookie"] = m["cookie"].get_str();
+    props["jid"] = jid;
+    connect_to_peer( peerip, peerport, props );
+}
+
+void
+greynet::jabber_new_peer(const string& jid)
+{
+    cout << "New jabber peer reported: " << jid << endl;
+    if( jid == m_pap->get<string>("plugins.greynet.jid","") )
+    {
+        cout << "self" << endl;
+        //return;
+    }
+    // tell them our ip/port
+    string cookie = m_pap->gen_uuid();
+    m_peer_cookies[cookie] = jid;
+    using namespace json_spirit;
+    Object o;
+    o.push_back( Pair("playdar-greynet", "0.1") );
+    o.push_back( Pair("peer_ip", m_pap->get<string>("plugins.greynet.ip","")) );
+    o.push_back( Pair("peer_port", GREYNET_PORT) );
+    o.push_back( Pair("cookie", cookie) );
+    ostringstream os;
+    write( o, os );
+    m_jbot->send_to( jid, os.str() );
+}
+
+/// end jabber stuff
 
 void
 greynet::start_resolving(boost::shared_ptr<ResolverQuery> rq)
@@ -103,7 +195,8 @@ greynet::new_incoming_connection( connection_ptr conn )
 void 
 greynet::new_outgoing_connection( connection_ptr conn )
 {
-    cout << "greynet::new_outgoing_connection " << conn->str() << endl;
+    cout << "greynet::new_outgoing_connection " << conn->str() 
+         << " jid: " << conn->get("jid") << endl;
     conn->push_message_received_cb( 
         boost::bind( &greynet::expect_ident, this, _1, _2, false) );
     send_ident( conn );
@@ -123,20 +216,58 @@ greynet::expect_ident( message_ptr msgp, connection_ptr conn, bool incoming )
     cout << "Got IDENT from new connection: " 
          << msgp->payload_str() << endl;
     
-    if( false ) // TODO validate the IDENT msg / auth code / whatever
+    // now parse/validate the ident msg. TODO move to IdentMsg class?
+    using namespace json_spirit;
+    Value v;
+    if( !read( msgp->payload_str(), v ) || v.type() != obj_type )
     {
         cout << "Invalid ident/auth from incoming connection. closing." << endl;
         conn->fin();
         return;
     }
+    Object o = v.get_obj();
+    map<string,Value> m;
+    obj_to_map(o,m);
+    if( m.find("name") == m.end() || m["name"].type() != str_type )
+    {
+        cout << "Invalid IDENT msg, goodbye." << endl;
+        conn->fin();
+        return;
+    }
+    const string name = m["name"].get_str();
     
-    // if the other end initiated the connection, and IDENTed, we should now
-    // send them our IDENT message
-    if( incoming ) send_ident( conn );
+    // if the other end initiated the connection, we validate their IDENT, then
+    // send them our IDENT message:
+    if( incoming )
+    {
+        cout << "New incoming connection from " << name << endl;
+        if( m.find("cookie") == m.end() || m["cookie"].type() != str_type )
+        {
+            cout << "IDENT missing cookie, goodbye" << endl;
+            conn->fin();
+            return;
+        }
+        const string cookie = m["cookie"].get_str();
+        if( cookie == "" 
+            || m_peer_cookies.find(cookie) == m_peer_cookies.end()
+            || m_peer_cookies[cookie] != name )
+        {
+            cout << "IDENT cookie or name mismatch, goodbye" << endl;
+            conn->fin();
+            return;
+        }
+        // they IDENTed correctly, send them our IDENT:
+        cout << "IDENT cookie verified for " << name << endl;
+        send_ident( conn );
+    }
+    else
+    {
+        cout << "New outgoing connection setup to " << name << endl;
+    }
     
     // now the connection is considered ready to handle normal messages:
     conn->set_ready( true );
-    conn->set_name( msgp->payload_str() );
+    conn->set_name( name );
     
     // remove our custom msg rcvd callback:
     conn->pop_message_received_cb();
@@ -148,7 +279,13 @@ void
 greynet::send_ident( connection_ptr conn )
 {
     cout << "Sending our IDENT.." << endl;
-    message_ptr msg( new IdentMessage( m_pap->hostname(), m_router->gen_uuid() ) );
+    using namespace json_spirit;
+    Object o;
+    o.push_back( Pair("name", m_pap->get<string>("plugins.greynet.jid","")) );
+    if( conn->get("cookie") != "" ) o.push_back( Pair("cookie", conn->get("cookie")) );
+    ostringstream os;
+    write( o, os );
+    message_ptr msg( new IdentMessage( os.str(), m_router->gen_uuid() ) );
     conn->async_write( msg );
 }
 

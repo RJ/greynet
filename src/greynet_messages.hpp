@@ -56,17 +56,17 @@ public:
 class IdentMessage : public libf2f::Message
 {
 public:
-    IdentMessage(const std::string &name, const std::string& uuid)
+    IdentMessage(const std::string &body, const std::string& uuid)
     {
         libf2f::message_header h;
         memcpy( &h.guid, uuid.data(), 36 );
         h.type = IDENT;
         h.ttl  = 1;
         h.hops = 0;
-        h.length = htonl(name.length());
+        h.length = htonl(body.length());
         m_header = h;
         malloc_payload();
-        memcpy( m_payload, name.data(), name.length() );
+        memcpy( m_payload, body.data(), body.length() );
     }
 };
 

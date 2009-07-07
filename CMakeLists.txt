@@ -8,6 +8,7 @@
 ADD_LIBRARY(    greynet SHARED
                 src/greynet.cpp
 		        src/ss_greynet.cpp
+                src/jbot.cpp
            )
 #
 # Ensure the shared library file is called <CLASS NAME>.resolver
@@ -21,6 +22,7 @@ SET_TARGET_PROPERTIES(  greynet PROPERTIES
 
 TARGET_LINK_LIBRARIES(  greynet
                         f2f
+                        gloox
                         ${Boost_LIBRARIES}
                         ${PLAYDAR_PLUGIN_LDFLAGS}
                      )

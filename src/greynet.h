@@ -19,6 +19,8 @@
 #include "playdar/playdar_plugin_include.h"
 #include "ss_greynet.h"
 
+#include "jbot.h"
+
 using namespace libf2f; // pff
 
 namespace playdar { 
@@ -33,6 +35,14 @@ class greynet
 public:
 
     virtual bool init(pa_ptr pap);
+    void connect_to_peer(const std::string& remote_ip, unsigned short remote_port);
+    void connect_to_peer(const std::string& remote_ip, unsigned short remote_port, std::map<std::string,std::string> props);
+    
+    /// jabber stuff
+    void jabber_start(const std::string& jid, const std::string& pass);
+    void jabber_msg_received(const std::string& msg, const std::string& jid);
+    void jabber_new_peer(const std::string& jid);
+    /// end jabber stuff
    
     virtual std::string name() const { return "greynet"; }
 
@@ -115,10 +125,31 @@ protected:
     virtual ~greynet() throw();
     
 private:
-
+/*
+    std::string connstore_get( connection_ptr conn, const std::string& key )
+    {
+        if( m_connstore.find(conn) == m_connstore.end() ) return "";
+        if( m_connstore[conn].find(key) == m_connstore[conn].end() ) return "";
+        return m_connstore[conn][key];
+    }
+    
+    void connstore_put( connection_ptr conn, const std::string& key, const std::string& val)
+    {
+        if( m_connstore.find(conn) == m_connstore.end() )
+        {
+            std::map<std::string, std::string> m;
+            m_connstore[conn] = m;
+        }
+        m_connstore[conn][key]=val;
+    }
+*/
     Router * m_router;
 
     pa_ptr m_pap;
+
+    boost::shared_ptr<jbot> m_jbot;
+    boost::shared_ptr<boost::thread> m_jbot_thread;
+    std::map<std::string, std::string> m_peer_cookies; // cookie->jid
 
     boost::thread_group m_threads;
     boost::shared_ptr<boost::asio::io_service> m_io_service;
@@ -126,13 +157,18 @@ private:
     // source of queries, so we know how to reply.
     std::map< query_uid, connection_ptr_weak > m_qidorigins;
     
+    // soure id to streaming strats
     std::map< source_uid,  boost::shared_ptr<ss_greynet> > m_sid2ss;
     
+    // so we can reject all GUIDs we've already seen (dupe msgs)
     std::set< std::string > m_seen_guids;
     
     // track connection -> sids that are actively being transferred so that
     // if a connection dies, we can cancel the sid transfers immediately
     std::multimap< connection_ptr, source_uid > m_conn2sid;
+    
+    // used to store transient misc data per connection
+    // std::map< connection_ptr, std::map<std::string, std::string> > m_connstore;
     
 };
 
