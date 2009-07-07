@@ -29,7 +29,7 @@ bool greynet::init(pa_ptr pap)
 {
     m_pap = pap;
 
-    unsigned short port = pap->get("plugins.greynet.port", GREYNET_PORT);
+    unsigned short port = m_pap->get("plugins.greynet.port", GREYNET_PORT);
 
     m_io_service = boost::shared_ptr<boost::asio::io_service>
                    (new boost::asio::io_service);
@@ -71,12 +71,20 @@ bool greynet::init(pa_ptr pap)
 greynet::~greynet() throw()
 {
     cout << "DTOR greynet" << endl;
-    m_jbot->stop();
-    m_jbot_thread->join();
-    
+    if( m_jbot )
+    {
+        cout << "Stopping xmpp bot.." << endl;
+        m_jbot->stop();
+        cout << "Waiting on xmpp thread.." << endl;
+        m_jbot_thread->join();
+    }
+    cout << "Stopping f2f router.." << endl;
     m_router->stop();
+    cout << "Stopping io_service.." << endl;
     m_io_service->stop();
+    cout << "Waiting on io service.." << endl;
     m_threads.join_all();
+    cout << "Greynet has shutdown." << endl;
 }
 
 void
@@ -163,7 +171,7 @@ greynet::jabber_new_peer(const string& jid)
     Object o;
     o.push_back( Pair("playdar-greynet", "0.1") );
     o.push_back( Pair("peer_ip", m_pap->get<string>("plugins.greynet.ip","")) );
-    o.push_back( Pair("peer_port", GREYNET_PORT) );
+    o.push_back( Pair("peer_port", m_pap->get("plugins.greynet.port", GREYNET_PORT)) );
     o.push_back( Pair("cookie", cookie) );
     ostringstream os;
     write( o, os );

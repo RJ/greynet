@@ -40,7 +40,7 @@ jbot::start()
 void 
 jbot::stop()
 {
-    j->disconnect();
+    if( j ) j->disconnect();
 }
 
 /// send msg to specific jid
