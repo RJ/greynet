@@ -153,8 +153,8 @@ greynet::jabber_new_peer(const string& jid)
     cout << "New jabber peer reported: " << jid << endl;
     if( jid == m_pap->get<string>("plugins.greynet.jid","") )
     {
-        cout << "self" << endl;
-        //return;
+        cout << "self, no action." << endl;
+        return;
     }
     // tell them our ip/port
     string cookie = m_pap->gen_uuid();
@@ -258,6 +258,8 @@ greynet::expect_ident( message_ptr msgp, connection_ptr conn, bool incoming )
         }
         // they IDENTed correctly, send them our IDENT:
         cout << "IDENT cookie verified for " << name << endl;
+        // nuke the cookie so it can't be reused
+        conn->set("cookie","");
         send_ident( conn );
     }
     else
@@ -671,8 +673,10 @@ greynet::anon_http_handler(const playdar_request& req, playdar_response& resp,
     pauth.add_formtoken( formtoken );
     typedef pair<string, connection_ptr_weak> pair_t;
     ostringstream os;
-    os  << "<h2>Greynet Settings</h2>"
-        "<form method=\"post\" action=\"\">"
+    os  <<  "<h2>Greynet Settings</h2>" 
+            "<p>Connections are established automatically whenever a "
+            "playdar-greynet capable peer comes online via XMPP</p>";
+     /*   "<form method=\"post\" action=\"\">"
         "Connect "
         "IP: <input type=\"text\" name=\"newaddr\" />"
         "Port: <input type=\"text\" name=\"newport\" value=\"" 
@@ -687,6 +691,7 @@ greynet::anon_http_handler(const playdar_request& req, playdar_response& resp,
         "</p>"
         << endl
         ;
+    */
     os  << "<h3>Current Connections</h3>"    
         << "<table>"
         << "<tr style=\"font-weight:bold;\">"
