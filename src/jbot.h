@@ -52,7 +52,7 @@ class jbot
     gloox::LogHandler
 {
   public:
-    jbot(std::string jid, std::string pass);
+    jbot(std::string jid, std::string pass, std::string server, unsigned short port);
     virtual ~jbot() {}
     
     /// Our bot api used in the resolver (note, no gloox types passed in/out)
@@ -103,7 +103,8 @@ class jbot
 
   private:
     gloox::Client *j;
-    std::string m_jid, m_pass;
+    std::string m_jid, m_pass, m_server;
+    unsigned short m_port;
     
     struct PlaydarPeer
     {

@@ -6,14 +6,16 @@
 using namespace gloox;
 using namespace std;
 
-jbot::jbot(std::string jid, std::string pass)
-        : m_jid(jid), m_pass(pass) {}
+jbot::jbot(std::string jid, std::string pass, std::string server, unsigned short port)
+        : m_jid(jid), m_pass(pass), m_server(server), m_port(port) {}
 
 void
 jbot::start()
 {
     JID jid( m_jid );
     j = new Client( jid, m_pass );
+    if( m_server != "" ) j->setServer(m_server);
+    j->setPort(m_port);
     j->registerConnectionListener( this );
     j->registerMessageHandler( this );
     j->rosterManager()->registerRosterListener( this );
@@ -24,9 +26,12 @@ jbot::start()
     j->disco()->addFeature( "playdar:resolver" );
 
     j->logInstance().registerLogHandler( LogLevelDebug, LogAreaAll, this );
-
+    // mark ourselves as "extended away" lowest priority:
+    j->setPresence( Presence::XA, -128, "Daemon not human." );
+    
     if ( j->connect( false ) )
     {
+        cout << "********** Resource: " << j->resource() << endl ;
         ConnectionError ce = ConnNoError;
         while ( ce == ConnNoError )
         {
@@ -87,9 +92,12 @@ jbot::clear_msg_received_callback()
 void 
 jbot::onConnect()
 {
-    printf( "connected!!!\n" );
-    // broadcast our presence (extended away) with the lowest priority
-    //j->setPresence( Presence::XA, -128, "I'm a bot, not a human." );
+    
+    // update jid resource, servers like gtalk use resource binding and may
+    // have changed our requested /resource
+    JID jid( m_jid );
+    jid.setResource( j->resource() );
+    printf( "connected as: %s\n", jid.full().c_str() );
 }
 
 void 

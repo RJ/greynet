@@ -62,8 +62,11 @@ bool greynet::init(pa_ptr pap)
                        );
     }
     
-    jabber_start(   m_pap->get<string>("plugins.greynet.jid",""),
-                    m_pap->get<string>("plugins.greynet.password","") );
+    jabber_start(   m_pap->get<string>("plugins.greynet.jabber.jid",""),
+                    m_pap->get<string>("plugins.greynet.jabber.password",""),
+                    m_pap->get<string>("plugins.greynet.jabber.server",""),
+                    m_pap->get<int>("plugins.greynet.jabber.port",5222)
+                );
     
     return true;
 }
@@ -105,9 +108,10 @@ greynet::connect_to_peer(const string& remote_ip, unsigned short remote_port, ma
     m_router->connect_to_remote(ep, props);
 }
 
-/// begin jaber stuff
+/// begin jabber stuff
 void
-greynet::jabber_start(const string& jid, const string& pass)
+greynet::jabber_start(const string& jid, const string& pass, 
+                      const string& server, unsigned short port)
 {
     if( jid.empty() || pass.empty() )
     {
@@ -115,7 +119,7 @@ greynet::jabber_start(const string& jid, const string& pass)
         return;
     }
     // start xmpp connection in new thread:
-    m_jbot = boost::shared_ptr<jbot>(new jbot(jid, pass));
+    m_jbot = boost::shared_ptr<jbot>(new jbot(jid, pass, server, port));
     m_jbot->set_msg_received_callback( boost::bind(&greynet::jabber_msg_received, this, _1, _2) );
     m_jbot->set_new_peer_callback( boost::bind(&greynet::jabber_new_peer, this, _1) );
     m_jbot_thread = boost::shared_ptr<boost::thread>
@@ -159,7 +163,7 @@ void
 greynet::jabber_new_peer(const string& jid)
 {
     cout << "New jabber peer reported: " << jid << endl;
-    if( jid == m_pap->get<string>("plugins.greynet.jid","") )
+    if( jid == m_pap->get<string>("plugins.greynet.jabber.jid","") )
     {
         cout << "self, no action." << endl;
         return;
@@ -171,7 +175,7 @@ greynet::jabber_new_peer(const string& jid)
     Object o;
     o.push_back( Pair("playdar-greynet", "0.1") );
     o.push_back( Pair("peer_ip", m_pap->get<string>("plugins.greynet.ip","")) );
-    o.push_back( Pair("peer_port", m_pap->get("plugins.greynet.port", GREYNET_PORT)) );
+    o.push_back( Pair("peer_port", m_pap->get<int>("plugins.greynet.port", GREYNET_PORT)) );
     o.push_back( Pair("cookie", cookie) );
     ostringstream os;
     write( o, os );
@@ -258,7 +262,8 @@ greynet::expect_ident( message_ptr msgp, connection_ptr conn, bool incoming )
         const string cookie = m["cookie"].get_str();
         if( cookie == "" 
             || m_peer_cookies.find(cookie) == m_peer_cookies.end()
-            || m_peer_cookies[cookie] != name )
+            /*|| m_peer_cookies[cookie] != name*/ )
+            // gtalk server changes your /resource wtf?
         {
             cout << "IDENT cookie or name mismatch, goodbye" << endl;
             conn->fin();
@@ -291,7 +296,7 @@ greynet::send_ident( connection_ptr conn )
     cout << "Sending our IDENT.." << endl;
     using namespace json_spirit;
     Object o;
-    o.push_back( Pair("name", m_pap->get<string>("plugins.greynet.jid","")) );
+    o.push_back( Pair("name", m_pap->get<string>("plugins.greynet.jabber.jid","")) );
     if( conn->get("cookie") != "" ) o.push_back( Pair("cookie", conn->get("cookie")) );
     ostringstream os;
     write( o, os );
@@ -676,7 +681,7 @@ greynet::anon_http_handler(const playdar_request& req, playdar_response& resp,
         cout <<" Pinging all.." << endl;
         m_router->send_all( message_ptr(new PingMessage(m_router->gen_uuid())) );
     }
-    
+    vector<string> peernames = m_router->get_connected_names();
     string formtoken = m_pap->gen_uuid();
     pauth.add_formtoken( formtoken );
     typedef pair<string, connection_ptr_weak> pair_t;
@@ -703,11 +708,12 @@ greynet::anon_http_handler(const playdar_request& req, playdar_response& resp,
     os  << "<h3>Current Connections</h3>"    
         << "<table>"
         << "<tr style=\"font-weight:bold;\">"
-        << "<td>Username</td><td>Msg Queue Size</td><td>Address</td></tr>";
-    
-    os  << "<tr><td colspan='3'><pre>"
-        << m_router->connections_str()
-        << "</pre></td></tr>";
+        << "<td>Username</td><td>Options</td></tr>";
+    BOOST_FOREACH( const string& pname, peernames )
+    {
+        os  << "<tr><td>" << pname << "</td>"
+               "<td>todo</td></tr>";
+    }
     /*
     BOOST_FOREACH(pair_t p, connections())
     {

@@ -39,7 +39,7 @@ public:
     void connect_to_peer(const std::string& remote_ip, unsigned short remote_port, std::map<std::string,std::string> props);
     
     /// jabber stuff
-    void jabber_start(const std::string& jid, const std::string& pass);
+    void jabber_start(const std::string& jid, const std::string& pass, const std::string& server, unsigned short port);
     void jabber_msg_received(const std::string& msg, const std::string& jid);
     void jabber_new_peer(const std::string& jid);
     /// end jabber stuff
