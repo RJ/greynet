@@ -63,7 +63,7 @@ Building the greynet plugin
 Assuming you have a working playdar source tree.
 
 $ cd playdar/contrib
-$ git clone GREYNET.git
+$ git clone git://github.com/RJ/greynet.git
 $ ln -s greynet ../resolvers/greynet
 $ cd ../build/
 $ make greynet
