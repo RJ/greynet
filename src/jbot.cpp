@@ -320,7 +320,8 @@ void
 jbot::handleDiscoInfo( const JID& from, const Disco::Info& info, int context)
 {
     printf("///////// handleDiscoInfo!\n");
-    if ( info.hasFeature("playdar:resolver") )
+    if ( info.hasFeature("playdar:resolver") 
+         || from.full().find( "playdar") != string::npos ) // HACK, gtalk filters unrecognised disco features, apparently :|
     {
         printf( "Found contact with playdar capabilities! '%s'\n", from.full().c_str() );
         bool found = false;
