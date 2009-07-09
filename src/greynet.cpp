@@ -590,7 +590,7 @@ greynet::handle_queryresult(connection_ptr conn, message_ptr msgp)
                             << endl;
                             
     ostringstream rbs;
-    rbs << "greynet://" << conn->name() << "/sid/" << rip->id();
+    rbs << "greynet://" << conn->name() << ";" << rip->id();
     cout << "created new greynet url:" << rbs.str() << endl;
     
     rip->set_url( rbs.str() );

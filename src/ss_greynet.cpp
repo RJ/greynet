@@ -43,10 +43,10 @@ ss_greynet::factory(std::string url, playdar::resolvers::greynet* g)
 {
     cout << "in ss_greynet::factory with url:" << url << endl;
     size_t offset = 10; // skip 'greynet://'
-    size_t offset2 = url.find( "/", offset );
+    size_t offset2 = url.find( ";", offset );
     if( offset2 == string::npos ) return boost::shared_ptr<ss_greynet>();
-    string username = url.substr(offset, offset2 - offset ); // username/sid/<sid>
-    string sid = url.substr( offset2 + 5, url.length() - (offset2 + 5) );
+    string username = url.substr(offset, offset2 - offset ); // username;<sid>
+    string sid = url.substr( offset2 + 1, url.length() - (offset2 + 1) );
     cout << "got username in greynet_ss::factory: " << username << " and sid: " << sid << endl;
     connection_ptr conn = g->get_conn( username );
     if( conn )
