@@ -34,8 +34,12 @@ See: http://camaya.net/glooxdownload
 You need to build gloox 1.0 from source.
 At the time of writing, the latest ver was 1.0-beta-7:
 
+$ sudo apt-get install libgnutls-dev
 $ CXXFLAGS=-fPIC ./configure --without-openssl --with-gnutls --with-zlib
 $ make && sudo make install
+
+NB: gloox-1.0-beta7 doesn't like connecting to google talk servers if compiled
+with OpenSSL - use GnuTLS instead.
 
 libf2f - p2p servent/router library
 -----------------------------------
