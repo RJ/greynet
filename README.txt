@@ -1,7 +1,7 @@
-greynet - a playdar plugin for friends
-======================================
+Greynet - a darknet/mesh network plugin for Playdar
+===================================================
 This plugin logs into XMPP (gTalk/jabber/etc) and detects which of your friends
-are also running playdar-greynet, it then makes a direct connection to all of 
+are also running playdar+greynet, it then makes a direct connection to all of 
 them to form a darknet/mesh network, external to XMPP.
 
 Queries and resulting files are streamed over the mesh in a darknet fashion,
@@ -19,6 +19,11 @@ Alice, who still doesn't know Charlie exists. To Alice, it looks like Bob has
 the matching file. If Alice requests to stream it, Bob requests to Charlie and
 acts as a proxy, so Alice only ever knows about Bob.
 
+XMPP Note
+---------
+You can be logged in multiple times - just use the same account as you use for
+chat with this plugin. The plugin doesn't receive msgs, and shouldn't confuse
+anyone.
 
 How to build it
 ===============
@@ -78,10 +83,12 @@ Slap something like this in your playdar.conf, in the "plugins" object:
         "server" : "talk.google.com",
         "port" : 5222
     },
-    "ip" : "127.0.0.1",
     "port" : 60211,
-    "nat" : true
+    "connection" : "nat"
 }
 
+If you are directly connected to the internet, change "connection": "direct"
+and add: "ip" : "1.2.3.4" where 1.2.3.4 is your external IP address.
 
+You can change the port to anything you want, it is sent to peers over XMPP.
 

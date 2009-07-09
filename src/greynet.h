@@ -21,6 +21,8 @@
 
 #include "jbot.h"
 
+#include "portfwd/portfwd.h"
+
 using namespace libf2f; // pff
 
 namespace playdar { 
@@ -150,6 +152,8 @@ private:
     boost::shared_ptr<jbot> m_jbot;
     boost::shared_ptr<boost::thread> m_jbot_thread;
     std::map<std::string, std::string> m_peer_cookies; // cookie->jid
+
+    boost::shared_ptr<Portfwd> m_pf;
 
     boost::thread_group m_threads;
     boost::shared_ptr<boost::asio::io_service> m_io_service;

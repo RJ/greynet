@@ -97,7 +97,8 @@ jbot::onConnect()
     // have changed our requested /resource
     JID jid( m_jid );
     jid.setResource( j->resource() );
-    printf( "connected as: %s\n", jid.full().c_str() );
+    m_jid = jid.full();
+    printf( "connected as: %s\n", m_jid.c_str() );
 }
 
 void 

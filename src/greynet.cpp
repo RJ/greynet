@@ -16,7 +16,7 @@
 #include "playdar/auth.h"
 
 // default port for f2f mesh
-#define GREYNET_PORT 60210
+#define GREYNET_PORT 60211
 
 using namespace std;
 using namespace json_spirit;
@@ -61,6 +61,25 @@ bool greynet::init(pa_ptr pap)
                             ("plugins.greynet.peerport",GREYNET_PORT) 
                        );
     }
+
+    // port fwd setup:
+    const string conntype = m_pap->get<string>("plugins.greynet.connection", "nat");
+    if(  conntype == "nat" )
+    {
+        m_pf = boost::shared_ptr<Portfwd>(new Portfwd);
+        if( m_pf->init(2500) && m_pf->add(port) )
+        {
+            cout << "Port forward setup ok!" << endl;
+        }else{
+            cout << "FAILED to detect nat router, no port fwd available." 
+                 << "greynet aborting, no port-fwd." << endl;
+            return false;
+        }
+    }
+    else
+    {
+        cout << "greynet connection!=nat, no port-fwd required." << endl;
+    }
     
     jabber_start(   m_pap->get<string>("plugins.greynet.jabber.jid",""),
                     m_pap->get<string>("plugins.greynet.jabber.password",""),
@@ -74,6 +93,11 @@ bool greynet::init(pa_ptr pap)
 greynet::~greynet() throw()
 {
     cout << "DTOR greynet" << endl;
+    if( m_pf )
+    {
+        cout << "Removing port fwd..." << endl;
+        m_pf->remove( m_pap->get("plugins.greynet.port", GREYNET_PORT) );
+    }
     if( m_jbot )
     {
         cout << "Stopping xmpp bot.." << endl;
@@ -163,9 +187,19 @@ void
 greynet::jabber_new_peer(const string& jid)
 {
     cout << "New jabber peer reported: " << jid << endl;
-    if( jid == m_pap->get<string>("plugins.greynet.jabber.jid","") )
+    if( jid == m_jbot->jid() )
     {
         cout << "self, no action." << endl;
+        return;
+    }
+    // get our external IP:
+    string extip = m_pap->get<string>("plugins.greynet.ip","");
+    if( extip == "" && m_pf ) extip = m_pf->external_ip();
+    if( extip == "" )
+    {
+        cout << "ERROR greynet doesn't know external IP address" << endl
+             << "either enable connection:nat, or add \"ip\":\"x.x.x.x\" to config"
+             << endl;
         return;
     }
     // tell them our ip/port
@@ -174,7 +208,7 @@ greynet::jabber_new_peer(const string& jid)
     using namespace json_spirit;
     Object o;
     o.push_back( Pair("playdar-greynet", "0.1") );
-    o.push_back( Pair("peer_ip", m_pap->get<string>("plugins.greynet.ip","")) );
+    o.push_back( Pair("peer_ip", extip) );
     o.push_back( Pair("peer_port", m_pap->get<int>("plugins.greynet.port", GREYNET_PORT)) );
     o.push_back( Pair("cookie", cookie) );
     ostringstream os;

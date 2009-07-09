@@ -1,10 +1,4 @@
 # This plugin depends on libf2f:
-#SET(F2F_LIB_DIR "/home/rj/src/libf2f/lib")
-#SET(F2F_INC_DIR "/home/rj/src/libf2f/include")
-#LINK_DIRECTORIES(    ${F2F_LIB_DIR} )
-#INCLUDE_DIRECTORIES( ${F2F_INC_DIR} )
-
-
 ADD_LIBRARY(    greynet SHARED
                 src/greynet.cpp
 		        src/ss_greynet.cpp
@@ -21,8 +15,9 @@ SET_TARGET_PROPERTIES(  greynet PROPERTIES
                      )
 
 TARGET_LINK_LIBRARIES(  greynet
-                        f2f
-                        gloox
+                        /usr/local/lib/libgloox.a
+                        /usr/local/lib/libf2f.a
+                        /usr/local/lib/libportfwd.a
                         ${Boost_LIBRARIES}
                         ${PLAYDAR_PLUGIN_LDFLAGS}
                      )

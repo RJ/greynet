@@ -63,7 +63,7 @@ class jbot
     void set_msg_received_callback( boost::function<void(const std::string&, const std::string&)> cb); 
     void set_new_peer_callback( boost::function<void(const std::string& jid)> cb);
     void clear_msg_received_callback();
-    
+    const std::string& jid() const { return m_jid; }
     
     /// GLOOX IMPLEMENTATION STUFF FOLLOWS
     
