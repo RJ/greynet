@@ -47,7 +47,7 @@ See: http://github.com/RJ/libf2f
 Build like so:
 
 $ git clone git://github.com/RJ/libf2f.git
-$ cd libf2f/build
+$ mkdir -p libf2f/build ; cd libf2f/build
 $ cmake ..
 $ make && sudo make install
 
@@ -57,7 +57,7 @@ See: http://github.com/RJ/libportfwd
 This allows the app to set up a port fwd automatically on your nat router
 
 $ git clone git://github.com/RJ/libportfwd.git
-$ cd libportfwd/build
+$ mkdir -p libportfwd/build ; cd libportfwd/build
 $ cmake ..
 $ make && sudo make install
 
@@ -66,9 +66,8 @@ Building the greynet plugin
 ---------------------------
 Assuming you have a working playdar source tree.
 
-$ cd playdar/contrib
+$ cd playdar/resolvers
 $ git clone git://github.com/RJ/greynet.git
-$ ln -s greynet ../resolvers/greynet
 $ cd ../build/
 $ make greynet
 
