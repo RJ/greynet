@@ -546,7 +546,10 @@ greynet::send_response( query_uid qid,
     cout << "got send_response with qid:" << qid << "and url:" << rip->url() << endl;
     if(origin_conn)
     {
-        message_ptr resp(new QueryResultMessage(qid, rip, m_router->gen_uuid()));
+        // strip the url from _a copy_ of the result_item
+        boost::shared_ptr<ResolvedItem> rip2( new ResolvedItem(*rip) );
+        rip2->rm_json_value( "url" );
+        message_ptr resp(new QueryResultMessage(qid, rip2, m_router->gen_uuid()));
         origin_conn->async_write( resp );
     }
 }
