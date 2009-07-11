@@ -69,6 +69,7 @@ Assuming you have a working playdar source tree.
 $ cd playdar/resolvers
 $ git clone git://github.com/RJ/greynet.git
 $ cd ../build/
+$ cmake ..
 $ make greynet
 
 The greynet plugin should load when you restart playdar.
@@ -89,6 +90,8 @@ Slap something like this in your playdar.conf, in the "plugins" object:
     "port" : 60211,
     "connection" : "nat"
 }
+
+The "server" line is only needed when using google talk - typically the server is the same as the domain in the jid.
 
 If you are directly connected to the internet, change "connection": "direct"
 and add: "ip" : "1.2.3.4" where 1.2.3.4 is your external IP address.
