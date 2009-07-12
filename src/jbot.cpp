@@ -10,7 +10,7 @@ jbot::jbot(std::string jid, std::string pass, std::string server, unsigned short
         : m_jid(jid), m_pass(pass), m_server(server), m_port(port) {}
 
 void
-jbot::start()
+jbot::start(const std::string& loglevel)
 {
     JID jid( m_jid );
     j = new Client( jid, m_pass );
@@ -25,7 +25,10 @@ jbot::start()
     j->disco()->setIdentity( "client", "bot" );
     j->disco()->addFeature( "playdar:resolver" );
 
-    j->logInstance().registerLogHandler( LogLevelDebug, LogAreaAll, this );
+    LogLevel ll = LogLevelDebug;
+    if( loglevel == "warning" ) ll = LogLevelWarning;
+    if( loglevel == "error"   ) ll = LogLevelError;
+    j->logInstance().registerLogHandler( ll, LogAreaAll, this );
     // mark ourselves as "extended away" lowest priority:
     j->setPresence( Presence::XA, -128, "Daemon not human." );
     
@@ -319,7 +322,7 @@ jbot::handleNonrosterPresence( const Presence& presence )
 void 
 jbot::handleDiscoInfo( const JID& from, const Disco::Info& info, int context)
 {
-    printf("///////// handleDiscoInfo!\n");
+    //printf("///////// handleDiscoInfo!\n");
     if ( info.hasFeature("playdar:resolver") 
          || from.resource().find( "playdar") != string::npos ) // HACK, gtalk filters unrecognised disco features, apparently :|
     {
@@ -345,12 +348,14 @@ jbot::handleDiscoInfo( const JID& from, const Disco::Info& info, int context)
         }
     }
     
-    printf("Available playdar JIDs: ");
-    BOOST_FOREACH( PlaydarPeer p, m_playdarpeers )
+    if( m_playdarpeers.size() )
     {
-        printf("%s ", p.jid.full().c_str() );
+        printf("Available playdar JIDs: \n");
+        BOOST_FOREACH( PlaydarPeer p, m_playdarpeers )
+        {
+            printf("* %s\n", p.jid.full().c_str() );
+        }
     }
-    printf("\n");
     
 }
 

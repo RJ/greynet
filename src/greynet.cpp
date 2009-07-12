@@ -52,35 +52,14 @@ bool greynet::init(pa_ptr pap)
             &boost::asio::io_service::run, m_io_service.get()));
     }
  
-    // get peers: TODO support multiple/list from config
-    string remote_ip = m_pap->get<string>("plugins.greynet.peerip","");
-    if(remote_ip!="")
-    {
-        connect_to_peer( remote_ip,
-                         m_pap->get<int>
-                            ("plugins.greynet.peerport",GREYNET_PORT) 
-                       );
-    }
-
-    // port fwd setup:
-    const string conntype = m_pap->get<string>("plugins.greynet.connection", "nat");
-    if(  conntype == "nat" )
-    {
-        m_pf = boost::shared_ptr<Portfwd>(new Portfwd);
-        if( m_pf->init(2500) && m_pf->add(port) )
-        {
-            cout << "Port forward setup ok!" << endl;
-        }else{
-            cout << "FAILED to detect nat router, no port fwd available." 
-                 << "greynet aborting, no port-fwd." << endl;
-            return false;
-        }
-    }
+    // detect external ip & setup port fwds etc
+    detect_ip();
+    if( public_ip() != "" )
+        cout << "Greynet can accept incoming connections on " << public_ip() << endl;
     else
-    {
-        cout << "greynet connection!=nat, no port-fwd required." << endl;
-    }
+        cout << "Greynet is firewalled / cannot accept incoming connections" << endl;
     
+    // log us in to jabber..
     jabber_start(   m_pap->get<string>("plugins.greynet.jabber.jid",""),
                     m_pap->get<string>("plugins.greynet.jabber.password",""),
                     m_pap->get<string>("plugins.greynet.jabber.server",""),
@@ -112,6 +91,45 @@ greynet::~greynet() throw()
     cout << "Waiting on io service.." << endl;
     m_threads.join_all();
     cout << "Greynet has shutdown." << endl;
+}
+/// figure out if we can accept incoming connections, talk to NAT router and
+/// set up port fwds etc if necessary
+void
+greynet::detect_ip()
+{
+    const string conntype = m_pap->get<string>("plugins.greynet.connection", "nat");
+    if(  conntype == "nat" )
+    {
+        m_pf = boost::shared_ptr<Portfwd>(new Portfwd);
+        if( ! m_pf->init(2500) )
+        {
+            cout << "Greynet couldn't detect NAT router" << endl;
+            return;
+        }
+        string extip = m_pap->get<string>("plugins.greynet.ip", m_pf->external_ip());
+        if( extip == "" )
+        {
+            cout << "Greynet couldn't detect external IP" << endl;
+            return;
+        }
+        if(! m_pf->add(m_pap->get("plugins.greynet.port", GREYNET_PORT)) )
+        {
+            cout << "Greynet couldn't setup a port fwd" << endl;
+            return;
+        }
+        
+        m_publicip = extip;
+    }
+    else // we are directly connected to the internet
+    {
+        string extip = m_pap->get<string>("plugins.greynet.ip", "");
+        if( extip == "" )
+        {
+            cout << "You need to specify your public ip as \"ip\" in greynet config" << endl;
+            return;
+        }
+        m_publicip = extip;
+    }
 }
 
 void
@@ -146,8 +164,10 @@ greynet::jabber_start(const string& jid, const string& pass,
     m_jbot = boost::shared_ptr<jbot>(new jbot(jid, pass, server, port));
     m_jbot->set_msg_received_callback( boost::bind(&greynet::jabber_msg_received, this, _1, _2) );
     m_jbot->set_new_peer_callback( boost::bind(&greynet::jabber_new_peer, this, _1) );
+    // valid loglevels are "debug" "warning" "error"
     m_jbot_thread = boost::shared_ptr<boost::thread>
-                        (new boost::thread(boost::bind(&jbot::start, m_jbot)));
+     (new boost::thread(boost::bind(&jbot::start, m_jbot, 
+                                    m_pap->get<string>("plugins.greynet.loglevel", "debug"))));
 
 }
 
@@ -192,23 +212,16 @@ greynet::jabber_new_peer(const string& jid)
         cout << "self, no action." << endl;
         return;
     }
-    // get our external IP:
-    string extip = m_pap->get<string>("plugins.greynet.ip","");
-    if( extip == "" && m_pf ) extip = m_pf->external_ip();
-    if( extip == "" )
-    {
-        cout << "ERROR greynet doesn't know external IP address" << endl
-             << "either enable connection:nat, or add \"ip\":\"x.x.x.x\" to config"
-             << endl;
-        return;
-    }
+    // can't advertise if we dont have a public ip:
+    if( public_ip() == "" ) return;
+    
     // tell them our ip/port
     string cookie = m_pap->gen_uuid();
     m_peer_cookies[cookie] = jid;
     using namespace json_spirit;
     Object o;
     o.push_back( Pair("playdar-greynet", "0.1") );
-    o.push_back( Pair("peer_ip", extip) );
+    o.push_back( Pair("peer_ip", public_ip()) );
     o.push_back( Pair("peer_port", m_pap->get<int>("plugins.greynet.port", GREYNET_PORT)) );
     o.push_back( Pair("cookie", cookie) );
     ostringstream os;

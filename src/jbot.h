@@ -56,7 +56,7 @@ class jbot
     virtual ~jbot() {}
     
     /// Our bot api used in the resolver (note, no gloox types passed in/out)
-    void start();
+    void start(const std::string& loglevel);
     void stop();
     void send_to( const std::string& to, const std::string& msg );
     void broadcast_msg( const std::string& msg );

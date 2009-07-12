@@ -127,24 +127,10 @@ protected:
     virtual ~greynet() throw();
     
 private:
-/*
-    std::string connstore_get( connection_ptr conn, const std::string& key )
-    {
-        if( m_connstore.find(conn) == m_connstore.end() ) return "";
-        if( m_connstore[conn].find(key) == m_connstore[conn].end() ) return "";
-        return m_connstore[conn][key];
-    }
-    
-    void connstore_put( connection_ptr conn, const std::string& key, const std::string& val)
-    {
-        if( m_connstore.find(conn) == m_connstore.end() )
-        {
-            std::map<std::string, std::string> m;
-            m_connstore[conn] = m;
-        }
-        m_connstore[conn][key]=val;
-    }
-*/
+
+    void detect_ip();
+    const std::string& public_ip() const { return m_publicip; }
+
     Router * m_router;
 
     pa_ptr m_pap;
@@ -171,8 +157,9 @@ private:
     // if a connection dies, we can cancel the sid transfers immediately
     std::multimap< connection_ptr, source_uid > m_conn2sid;
     
-    // used to store transient misc data per connection
-    // std::map< connection_ptr, std::map<std::string, std::string> > m_connstore;
+    // do we have a public internet IP for incoming connections?
+    std::string m_publicip;
+    
     
 };
 
