@@ -3,6 +3,7 @@
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
 
+
 using namespace gloox;
 using namespace std;
 
@@ -366,9 +367,9 @@ jbot::handleDiscoItems( const JID& /*iq*/, const Disco::Items&, int /*context*/ 
 }
 
 void 
-jbot::handleDiscoError( const JID& /*iq*/, const Error*, int /*context*/ )
+jbot::handleDiscoError( const JID& j, const Error* e, int /*context*/ )
 {
-    printf( "handleDiscoError\n" );
+    printf( "handleDiscoError for jid: %s reason: %s\n", j.full().c_str(), e->text().c_str() );
 }
 /// END DISCO STUFF
 /*

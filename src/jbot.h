@@ -25,6 +25,7 @@
 #include <gloox/siprofileft.h>
 #include <gloox/siprofilefthandler.h>
 #include <gloox/bytestreamdatahandler.h>
+#include <gloox/error.h>
 
 #include <boost/function.hpp>
 
