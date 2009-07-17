@@ -133,7 +133,7 @@ private:
     const std::string& public_ip() const { return m_publicip; }
 
     Router * m_router;
-
+    unsigned short m_port;
     pa_ptr m_pap;
 
     boost::shared_ptr<jbot> m_jbot;

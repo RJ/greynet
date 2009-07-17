@@ -28,22 +28,21 @@ namespace resolvers {
 bool greynet::init(pa_ptr pap)
 {
     m_pap = pap;
-
-    unsigned short port = m_pap->get("plugins.greynet.port", GREYNET_PORT);
+    m_port = m_pap->get("plugins.greynet.port", GREYNET_PORT);
 
     m_io_service = boost::shared_ptr<boost::asio::io_service>
                    (new boost::asio::io_service);
     boost::shared_ptr<boost::asio::ip::tcp::acceptor> accp(
         new boost::asio::ip::tcp::acceptor(
             *m_io_service, 
-            boost::asio::ip::tcp::endpoint( boost::asio::ip::tcp::v4(), port) 
+            boost::asio::ip::tcp::endpoint( boost::asio::ip::tcp::v4(), m_port) 
             )
     );
     
     m_router = new Router( accp, this, boost::bind(&PluginAdaptor::gen_uuid, m_pap) );
     
     // start io_services:
-    cout << "Greynet router coming online on port " <<  port <<endl;
+    cout << "Greynet router coming online on port " <<  m_port <<endl;
     cout << "Greynet build date: " << __DATE__ << " " << __TIME__ << endl;
     
     for (std::size_t i = 0; i < 1; ++i)
@@ -72,11 +71,12 @@ bool greynet::init(pa_ptr pap)
 greynet::~greynet() throw()
 {
     cout << "DTOR greynet" << endl;
-    if( m_pf )
-    {
-        cout << "Removing port fwd..." << endl;
-        m_pf->remove( m_pap->get("plugins.greynet.port", GREYNET_PORT) );
-    }
+    cout << "Stopping f2f router.." << endl;
+    m_router->stop();
+    cout << "Stopping io_service.." << endl;
+    m_io_service->stop();
+    cout << "Waiting on io service.." << endl;
+    m_threads.join_all();
     if( m_jbot )
     {
         cout << "Stopping xmpp bot.." << endl;
@@ -84,12 +84,11 @@ greynet::~greynet() throw()
         cout << "Waiting on xmpp thread.." << endl;
         m_jbot_thread->join();
     }
-    cout << "Stopping f2f router.." << endl;
-    m_router->stop();
-    cout << "Stopping io_service.." << endl;
-    m_io_service->stop();
-    cout << "Waiting on io service.." << endl;
-    m_threads.join_all();
+    if( m_pf )
+    {
+        cout << "Removing port fwd..." << endl;
+        m_pf->remove( m_port );
+    }
     cout << "Greynet has shutdown." << endl;
 }
 /// figure out if we can accept incoming connections, talk to NAT router and
@@ -112,7 +111,7 @@ greynet::detect_ip()
             cout << "Greynet couldn't detect external IP" << endl;
             return;
         }
-        if(! m_pf->add(m_pap->get("plugins.greynet.port", GREYNET_PORT)) )
+        if(! m_pf->add(m_port) )
         {
             cout << "Greynet couldn't setup a port fwd" << endl;
             return;
@@ -167,7 +166,7 @@ greynet::jabber_start(const string& jid, const string& pass,
     // valid loglevels are "debug" "warning" "error"
     m_jbot_thread = boost::shared_ptr<boost::thread>
      (new boost::thread(boost::bind(&jbot::start, m_jbot, 
-                                    m_pap->get<string>("plugins.greynet.loglevel", "debug"))));
+                                    m_pap->get<string>("plugins.greynet.loglevel", "error"))));
 
 }
 
@@ -237,7 +236,7 @@ greynet::jabber_new_peer(const string& jid)
     Object o;
     o.push_back( Pair("playdar-greynet", "0.2") );
     o.push_back( Pair("peer_ip", public_ip()) );
-    o.push_back( Pair("peer_port", m_pap->get<int>("plugins.greynet.port", GREYNET_PORT)) );
+    o.push_back( Pair("peer_port", m_port) );
     o.push_back( Pair("cookie", cookie) );
     ostringstream os;
     write_formatted( o, os );

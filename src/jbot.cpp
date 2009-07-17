@@ -14,6 +14,20 @@ void
 jbot::start(const std::string& loglevel)
 {
     JID jid( m_jid );
+    
+    // the google hack, because they filter disco features they don't know.
+    if( jid.server().find("googlemail.") != string::npos 
+        || jid.server().find("gmail.") != string::npos
+        || jid.server().find("gtalk.") != string::npos )
+    {
+        if( jid.resource().find("playdar") == string::npos )
+        {
+            cout << "Forcing your /resource to contain 'playdar' (the google workaround)" << endl;
+            jid.setResource( string("playdar_") + jid.resource() );
+            m_jid = jid.full();
+        }
+    }
+    
     j = new Client( jid, m_pass );
     if( m_server != "" ) j->setServer(m_server);
     j->setPort(m_port);
@@ -22,7 +36,7 @@ jbot::start(const std::string& loglevel)
     j->rosterManager()->registerRosterListener( this );
     j->disco()->registerDiscoHandler( this );
 
-    j->disco()->setVersion( "gloox_playdar", GLOOX_VERSION, "Linux" );
+    j->disco()->setVersion( "gloox_playdar", GLOOX_VERSION, "cross-platform" );
     j->disco()->setIdentity( "client", "bot" );
     j->disco()->addFeature( "playdar:resolver" );
 
@@ -31,6 +45,7 @@ jbot::start(const std::string& loglevel)
     if( loglevel == "error"   ) ll = LogLevelError;
     j->logInstance().registerLogHandler( ll, LogAreaAll, this );
     // mark ourselves as "extended away" lowest priority:
+    // there is no "invisible" in the spec. XA is the lowest?
     j->setPresence( Presence::XA, -128, "Daemon not human." );
     
     if ( j->connect( false ) )
@@ -41,7 +56,7 @@ jbot::start(const std::string& loglevel)
         {
             ce = j->recv();
         }
-        printf( "ce: %d\n", ce );
+        printf( "gloox box disconnected, ce: %d\n", ce );
     }
     delete( j );
 }
@@ -49,6 +64,12 @@ jbot::start(const std::string& loglevel)
 void 
 jbot::stop()
 {
+    j->setPresence( Presence::Unavailable, -128 );
+    j->disco()->removeDiscoHandler( this );
+    j->rosterManager()->removeRosterListener();
+    j->removeMessageHandler(this);
+    j->removeConnectionListener(this);
+    
     if( j ) j->disconnect();
 }
 
@@ -224,23 +245,27 @@ jbot::handleItemUpdated( const JID& jid )
 void 
 jbot::handleRoster( const Roster& roster )
 {
-    printf( "roster arriving\nitems:\n" );
+    printf( "roster arriving: " );
     Roster::const_iterator it = roster.begin();
     for ( ; it != roster.end(); ++it )
     {
         if ( (*it).second->subscription() != S10nBoth ) continue;
         j->disco()->getDiscoInfo( (*it).second->jid(), "", this, 0 );
+        /*
         printf( "jid: %s, name: %s, subscription: %d\n",
                 (*it).second->jid().c_str(), (*it).second->name().c_str(),
                 (*it).second->subscription() );
+        */
+        printf("%s ", (*it).second->jid().c_str());
         StringList g = (*it).second->groups();
         StringList::const_iterator it_g = g.begin();
-        for ( ; it_g != g.end(); ++it_g )
-            printf( "\tgroup: %s\n", (*it_g).c_str() );
+        //for ( ; it_g != g.end(); ++it_g )
+        //    printf( "\tgroup: %s\n", (*it_g).c_str() );
         RosterItem::ResourceMap::const_iterator rit = (*it).second->resources().begin();
         for ( ; rit != (*it).second->resources().end(); ++rit )
-            printf( "resource: %s\n", (*rit).first.c_str() );
+            printf( "resource: %s ", (*rit).first.c_str() );
     }
+    printf("\n");
 }
 
 void 
@@ -348,7 +373,7 @@ jbot::handleDiscoInfo( const JID& from, const Disco::Info& info, int context)
             }
         }
     }
-    
+    /*
     if( m_playdarpeers.size() )
     {
         printf("Available playdar JIDs: \n");
@@ -357,7 +382,7 @@ jbot::handleDiscoInfo( const JID& from, const Disco::Info& info, int context)
             printf("* %s\n", p.jid.full().c_str() );
         }
     }
-    
+    */
 }
 
 void 
@@ -372,17 +397,4 @@ jbot::handleDiscoError( const JID& j, const Error* e, int /*context*/ )
     printf( "handleDiscoError for jid: %s reason: %s\n", j.full().c_str(), e->text().c_str() );
 }
 /// END DISCO STUFF
-/*
-int main( int argc, char** argv )
-{
-  if(argc!=3)
-  {
-    printf("Usage: %s <jid> <pass>\n", *argv);
-    return 1;
-  }
-  jbot *r = new jbot(argv[1], argv[2]);
-  r->start();
-  delete( r );
-  return 0;
-}
-*/
+
