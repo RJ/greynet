@@ -174,7 +174,7 @@ greynet::jabber_start(const string& jid, const string& pass,
 void
 greynet::jabber_msg_received(const string& msg, const string& jid)
 {
-    cout << "Msg from " << jid << " = " << msg << endl;
+    cout << "Msg from '" << jid << "':" << endl << msg << endl;
     // is this a new peer announcement?
     using namespace json_spirit;
     Value mv;
@@ -189,14 +189,25 @@ greynet::jabber_msg_received(const string& msg, const string& jid)
     // TODO better validation here:
     if( m.find("playdar-greynet") == m.end() ||
         m.find("peer_ip") == m.end() ||
+        m.find("peer_port") == m.end() ||
         m.find("cookie") == m.end() )
     {
         cout << "Missing fields, invalid." << endl;
         return;
     }
+    if( m["playdar-greynet"].type() != str_type ||
+        m["peer_ip"].type() != str_type ||
+        m["peer_port"].type() != int_type ||
+        m["cookie"].type() != str_type )
+    {
+        cout << "Malformed msg, invalid." << endl;
+        return;
+    }
     string peerip = m["peer_ip"].get_str();
     int peerport = m["peer_port"].get_int();
-    cout << "Jabber msg means we'll connect to: " << peerip << ":" << peerport << endl;
+    cout << "Jabber advertisment from '" << jid << "' greynet version '" 
+         << m["playdar-greynet"].get_str() << "' peer: '"
+         << peerip << ":" << peerport << "'" << endl;
     map<string,string> props;
     props["cookie"] = m["cookie"].get_str();
     props["jid"] = jid;
@@ -206,26 +217,30 @@ greynet::jabber_msg_received(const string& msg, const string& jid)
 void
 greynet::jabber_new_peer(const string& jid)
 {
+    if( jid == m_jbot->jid() ) return;
     cout << "New jabber peer reported: " << jid << endl;
-    if( jid == m_jbot->jid() )
+    // can't advertise if we dont have a public ip:
+    if( public_ip() == "" ) 
     {
-        cout << "self, no action." << endl;
+        cout << "We are firewalled, can't advertise. Hope they have a port fwd instead.." << endl;
         return;
     }
-    // can't advertise if we dont have a public ip:
-    if( public_ip() == "" ) return;
-    
+    if( m_router->get_connection_by_name( jid ) )
+    {
+        cout << "Already connected to this peer: " << jid << endl;
+        return;
+    }
     // tell them our ip/port
     string cookie = m_pap->gen_uuid();
     m_peer_cookies[cookie] = jid;
     using namespace json_spirit;
     Object o;
-    o.push_back( Pair("playdar-greynet", "0.1") );
+    o.push_back( Pair("playdar-greynet", "0.2") );
     o.push_back( Pair("peer_ip", public_ip()) );
     o.push_back( Pair("peer_port", m_pap->get<int>("plugins.greynet.port", GREYNET_PORT)) );
     o.push_back( Pair("cookie", cookie) );
     ostringstream os;
-    write( o, os );
+    write_formatted( o, os );
     m_jbot->send_to( jid, os.str() );
 }
 
@@ -295,6 +310,13 @@ greynet::expect_ident( message_ptr msgp, connection_ptr conn, bool incoming )
     }
     const string name = m["name"].get_str();
     
+    if( m_router->get_connection_by_name( name ) )
+    {
+        cout << "Greynet user already connected, dropping: " << name << endl;
+        conn->fin();
+        return;
+    }
+    
     // if the other end initiated the connection, we validate their IDENT, then
     // send them our IDENT message:
     if( incoming )
@@ -308,9 +330,7 @@ greynet::expect_ident( message_ptr msgp, connection_ptr conn, bool incoming )
         }
         const string cookie = m["cookie"].get_str();
         if( cookie == "" 
-            || m_peer_cookies.find(cookie) == m_peer_cookies.end()
-            /*|| m_peer_cookies[cookie] != name*/ )
-            // gtalk server changes your /resource wtf?
+            || m_peer_cookies.find(cookie) == m_peer_cookies.end() )
         {
             cout << "IDENT cookie or name mismatch, goodbye" << endl;
             conn->fin();
@@ -327,12 +347,10 @@ greynet::expect_ident( message_ptr msgp, connection_ptr conn, bool incoming )
         cout << "New outgoing connection setup to " << name << endl;
     }
     
-    // now the connection is considered ready to handle normal messages:
+    // now the connection is considered ready to handle normal messages
+    conn->pop_message_received_cb(); // remove our custom msg rcvd callback
     conn->set_ready( true );
     conn->set_name( name );
-    
-    // remove our custom msg rcvd callback:
-    conn->pop_message_received_cb();
     
     cout << "Connection ready to rock: " << conn->str() << endl;
 }
@@ -343,7 +361,7 @@ greynet::send_ident( connection_ptr conn )
     cout << "Sending our IDENT.." << endl;
     using namespace json_spirit;
     Object o;
-    o.push_back( Pair("name", m_pap->get<string>("plugins.greynet.jabber.jid","")) );
+    o.push_back( Pair("name", m_jbot->jid()) );
     if( conn->get("cookie") != "" ) o.push_back( Pair("cookie", conn->get("cookie")) );
     ostringstream os;
     write( o, os );
@@ -387,15 +405,17 @@ greynet::unregister_sidtransfer( connection_ptr conn, const source_uid &sid )
         if( (*it).second == sid )
         {        
             m_conn2sid.erase( it );
-            return;
+            break;
         } 
     }
+    m_sid2ss.erase( sid );
 }
 
 void
-greynet::register_sidtransfer( connection_ptr conn, const source_uid &sid )
+greynet::register_sidtransfer( connection_ptr conn, const source_uid &sid, boost::shared_ptr<ss_greynet> ss )
 {
     cout << "greynet::register_sidtransfer" << endl;
+    m_sid2ss[sid] = ss;
     // TODO assert it's not already registered?
     m_conn2sid.insert( pair<connection_ptr, source_uid>(conn,sid) );
 }
@@ -404,10 +424,10 @@ greynet::register_sidtransfer( connection_ptr conn, const source_uid &sid )
 void
 greynet::message_received( message_ptr msgp, connection_ptr conn )
 {
-    cout << "greynet::message_received from " << conn->str() 
-         << " " << msgp->str() << endl;
+    //cout << "greynet::message_received from " << conn->str() 
+    //     << " " << msgp->str() << endl;
              
-    // ignore if the msg guid is a dupe
+    //  ignore if the msg guid is a dupe
     // but allow dupes for streams (all msgs of one stream have same sid)
     switch( msgp->type() )
     {
@@ -443,9 +463,8 @@ greynet::message_received( message_ptr msgp, connection_ptr conn )
             handle_queryresult(conn,msgp);
             break;
         
-        case QUERYCANCEL:
-            //handle_querycancel(conn,msgp);
-            cout << "querycancel is not currently handled" << endl; //TODO
+        case QUERYSTOP:
+            handle_querystop(conn,msgp);
             break;
             
         case SIDREQUEST:
@@ -465,7 +484,8 @@ greynet::message_received( message_ptr msgp, connection_ptr conn )
             break;   
         
         default:
-            cout << "UNKNOWN MSG! " << msgp->str() << endl;
+            cout << "UNKNOWN MSG from " << conn->str() << endl
+                 << msgp->str() << endl;
     }
 }
 
@@ -527,6 +547,34 @@ greynet::handle_query(connection_ptr conn, message_ptr msgp)
                                 conn, msgp, t, qid));
 }
 
+/// means a result was found, or origin gave up. cease fwding this qry
+void
+greynet::handle_querystop(connection_ptr conn, message_ptr msgp)
+{
+    query_uid qid = msgp->guid();
+    if( !m_pap->query_exists( qid ) )
+    {
+        cout << "Discarding querystop, QID doesn't exist" << endl;
+        return;
+    }
+    if( get_query_origin(qid) != conn )
+    {
+        cout << "Discarding querystop, didn't come from queryorigin" << endl;
+        return;
+    }
+    cout << "Applying querystop, and fwding to all peers immediately" << endl;
+    // NB: any timers due to fwd the query will still be active - we don't 
+    // have a handle on them to stop them. This doesn't matter because the 
+    // fwd_search method does nothing if the query is stopped.
+    m_pap->rq( msgp->guid() )->stop();
+    // broadcast the querycancel to all peers with no delay,
+    // so that the stop msg reaches query frontier ASAP (faster than queries)
+    m_router->foreach_conns_except( 
+        boost::bind(&Connection::async_write, _1, msgp), conn 
+    );
+}
+
+/// send search msg to all connected peers except the query origin
 void
 greynet::fwd_search(const boost::system::error_code& e,
                      connection_ptr conn, message_ptr msgp,
@@ -544,12 +592,17 @@ greynet::fwd_search(const boost::system::error_code& e,
         cout << "Greynet: not relaying solved search: " << qid << endl;
         return;
     }
+    if( m_pap->rq(qid)->stopped() )
+    {
+        cout << "Greynet: not relaying stopped search: " << qid << endl;
+        return;
+    }
     // TODO check search is still active
     cout << "Forwarding search.." << endl;
     m_router->foreach_conns_except( boost::bind(&Connection::async_write, _1, msgp), conn );
 }
 
-// fired when a new result is available for a running query:
+/// fired when a new result is available for a running query:
 void
 greynet::send_response( query_uid qid, 
                         boost::shared_ptr<ResolvedItem> rip)
@@ -560,6 +613,7 @@ greynet::send_response( query_uid qid,
     if(origin_conn)
     {
         // strip the url from _a copy_ of the result_item
+        // TODO do we need to strip/replace from_name with our own name here?
         boost::shared_ptr<ResolvedItem> rip2( new ResolvedItem(*rip) );
         rip2->rm_json_value( "url" );
         message_ptr resp(new QueryResultMessage(qid, rip2, m_router->gen_uuid()));
@@ -570,7 +624,7 @@ greynet::send_response( query_uid qid,
 void
 greynet::handle_queryresult(connection_ptr conn, message_ptr msgp)
 {
-    cout << "Got search result: " << msgp->str() << endl;
+    cout << "greynet: Got search result: " << msgp->str() << endl;
     // try and parse it as json:
     Value v;
     if(!read(msgp->payload_str(), v)) 
@@ -607,7 +661,7 @@ greynet::handle_queryresult(connection_ptr conn, message_ptr msgp)
                             
     ostringstream rbs;
     rbs << "greynet://" << conn->name() << ";" << rip->id();
-    cout << "created new greynet url:" << rbs.str() << endl;
+    //cout << "created new greynet url:" << rbs.str() << endl;
     
     rip->set_url( rbs.str() );
     vector< json_spirit::Object> res;
@@ -627,8 +681,7 @@ void
 greynet::start_sidrequest(connection_ptr conn, source_uid sid, 
                           boost::shared_ptr<ss_greynet> ss)
 {
-    m_sid2ss[sid] = ss;
-    register_sidtransfer( conn, sid );
+    register_sidtransfer( conn, sid, ss );
     message_ptr msg(new GeneralMessage(SIDREQUEST, sid, m_pap->gen_uuid()));
     conn->async_write( msg );
     // the ss_greynet will get callbacks fired as data arrives.

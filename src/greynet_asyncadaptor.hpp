@@ -21,7 +21,13 @@ public:
         :  m_sid(sid), m_conn(conn), m_sentfirst(false),
             m_status(200), m_mimetype("application/binary"), m_contentlength(0)
     {
+        std::cout << "CTOR greynet_asyncadaptor" << std::endl;
         //ggHack=0; // hack to make sender die mid-stream
+    }
+    
+    ~greynet_asyncadaptor()
+    {
+        std::cout << "DTOR greynet_asyncadaptor" << std::endl;
     }
 
     virtual void write_content(const char *buffer, int size)

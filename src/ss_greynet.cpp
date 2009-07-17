@@ -37,6 +37,22 @@ ss_greynet::ss_greynet(const ss_greynet& other)
 {
         reset();
 }
+
+void
+ss_greynet::print_stats()
+{
+    cout << "Transfer <--> " << conn()->name() << endl;
+    time_t tnow, diff;
+    time(&tnow);
+    diff = tnow - m_starttime;
+    int bps = -1;
+    if( diff > 0 ) bps = (int) (m_bytes_transferred/(float)diff);
+    
+    cout << "Transferred [" << m_bytes_transferred << "/" << m_contentlength 
+         << "] in " << diff << " seconds. " << endl;
+    if(bps!=-1) 
+        cout << "Average speed: " << bps << " bytes/second." << endl;
+}
     
 boost::shared_ptr<ss_greynet> 
 ss_greynet::factory(std::string url, playdar::resolvers::greynet* g)
@@ -89,16 +105,18 @@ ss_greynet::timeout_cb(const boost::system::error_code& e)
 bool 
 ss_greynet::siddata_handler(const char * payload, size_t len)
 {
-    
+    // a zero length siddata indicates the end of transfer
     if( len == 0 )
     {
-        cout << "last SIDDATA msg has arrived" << endl;
+        cout << "Greynet transfer completed for " << sid() << endl;
+        print_stats();
         m_finished = true;
         m_aa->write_finish();
+        m_greynet->unregister_sidtransfer( conn(), sid() );
     }
     else
     {
-        // our async delegate knows what to do with the data...
+        m_bytes_transferred += len;
         m_aa->write_content(payload, len);
     }
     return true;
@@ -108,6 +126,7 @@ void
 ss_greynet::cancel_handler()
 {
     cout << "ss_greynet::cancel_handler fired." << endl;
+    print_stats();
     m_aa->write_cancel();
     m_greynet->unregister_sidtransfer( conn(), sid() );
 }
@@ -148,6 +167,7 @@ ss_greynet::sidheaders_handler(message_ptr msgp)
             {
                 int len = atoi(parts[1].c_str());
                 m_aa->set_content_length( len );
+                m_contentlength = len;
                 continue;
             }
         }

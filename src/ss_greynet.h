@@ -40,9 +40,13 @@ public:
         return s.str();
     }
     
+    void print_stats();
     void reset()
     {
         m_finished = false;
+        time(&m_starttime);
+        m_contentlength = 0;
+        m_bytes_transferred = 0;
     }
     
     void start_reply(AsyncAdaptor_ptr aa);
@@ -57,6 +61,11 @@ public:
     const std::string& sid() const { return m_sid; }
     
 private:
+    size_t m_bytes_transferred;
+    time_t m_starttime;
+    size_t m_contentlength;
+    
+    
     boost::shared_ptr<boost::asio::deadline_timer> m_timer;
     AsyncAdaptor_ptr m_aa;
     greynet* m_greynet;

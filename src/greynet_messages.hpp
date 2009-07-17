@@ -10,7 +10,7 @@
 #define IDENT           2
 #define QUERY           3
 #define QUERYRESULT     4
-#define QUERYCANCEL     5
+#define QUERYSTOP       5
 #define SIDREQUEST      6
 #define SIDDATA         7
 #define SIDFAIL         8

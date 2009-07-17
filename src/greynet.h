@@ -79,11 +79,12 @@ public:
     bool handle_siddata(connection_ptr conn, message_ptr msg);
     void handle_sidheaders(connection_ptr conn, message_ptr msgp);
     void handle_sidfail(connection_ptr conn, message_ptr msgp);
-    
+    void handle_querystop(connection_ptr conn, message_ptr msgp);
+
     void start_sidrequest(connection_ptr conn, source_uid sid, boost::shared_ptr<ss_greynet> ss);
     
     void unregister_sidtransfer( connection_ptr conn, const source_uid &sid );
-    void register_sidtransfer( connection_ptr conn, const source_uid &sid );
+    void register_sidtransfer( connection_ptr conn, const source_uid &sid, boost::shared_ptr<ss_greynet> ss );
     
     void set_query_origin(query_uid qid, connection_ptr conn)
     {
