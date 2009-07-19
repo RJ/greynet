@@ -846,7 +846,20 @@ greynet::authed_http_handler(const playdar_request& req, playdar_response& resp,
         Array a = m_jbot->get_roster();
         ostringstream os;
         write_formatted( a, os );
-        resp = playdar_response( os.str(), false );
+        string retval;
+        if( req.getvar_exists( "jsonp" ))
+        {
+            retval = req.getvar( "jsonp" );
+            retval += "(" ;
+            retval += os.str();
+            retval += ");\n";
+        }
+        else
+        {
+            retval = os.str();
+        }
+        
+        resp = playdar_response( retval, false );
         return true;
     }
     
