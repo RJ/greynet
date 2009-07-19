@@ -15,9 +15,9 @@ SET_TARGET_PROPERTIES(  greynet PROPERTIES
                      )
 
 TARGET_LINK_LIBRARIES(  greynet
-                        /usr/local/lib/libgloox.a
-                        /usr/local/lib/libf2f.a
-                        /usr/local/lib/libportfwd.a
+                        libgloox.a
+                        libf2f.a
+                        libportfwd.a
                         ${Boost_LIBRARIES}
                         ${PLAYDAR_PLUGIN_LDFLAGS}
                      )
