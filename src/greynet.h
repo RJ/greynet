@@ -119,7 +119,8 @@ public:
     }
     
     bool anon_http_handler(const playdar_request&, playdar_response&, playdar::auth&);
-                           
+    bool authed_http_handler(const playdar_request& req, playdar_response& resp, playdar::auth& pauth);
+
     boost::shared_ptr<boost::asio::io_service> get_io_service() const
     {
         return m_io_service;

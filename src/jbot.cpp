@@ -3,12 +3,23 @@
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
 
-
 using namespace gloox;
 using namespace std;
 
 jbot::jbot(std::string jid, std::string pass, std::string server, unsigned short port)
-        : m_jid(jid), m_pass(pass), m_server(server), m_port(port) {}
+        : m_jid(jid), m_pass(pass), m_server(server), m_port(port) 
+{
+    m_presences[Presence::Available]  = "available";
+    m_presences[Presence::Chat]   ="chat";
+    m_presences[Presence::Away]   ="away";
+    m_presences[Presence::DND]   ="dnd";
+    m_presences[Presence::XA]   ="xa";
+    m_presences[Presence::Unavailable]   ="unavailable";
+    m_presences[Presence::Probe]   ="probe";
+    m_presences[Presence::Error]   ="error";
+    m_presences[Presence::Invalid]   ="invalid";
+    
+}
 
 void
 jbot::start(const std::string& loglevel)
@@ -110,6 +121,43 @@ void
 jbot::clear_msg_received_callback()
 {
     m_msg_received_callback = 0;
+}
+
+json_spirit::Array
+jbot::get_roster()
+{
+    using namespace json_spirit;
+    Array a;
+    Roster * roster = j->rosterManager()->roster();
+    typedef std::pair<const std::string, RosterItem*> pair_t;
+    typedef std::pair<std::string, Resource*> rp_t;
+    BOOST_FOREACH( pair_t ri, *roster )
+    {
+        if( ri.second->subscription() != S10nBoth ) continue;
+        json_spirit::Object o;
+        o.push_back( Pair("jid", ri.first) );
+        o.push_back( Pair("jid_bare", ri.second->jid()) );
+        o.push_back( Pair("name", ri.second->name()) );
+        o.push_back( Pair("online",  ri.second->online()) );
+        json_spirit::Object oresources;
+        //ResourceMap rm = ri.second->resources();
+        std::map<std::string, Resource*> rm = ri.second->resources();
+        BOOST_FOREACH( rp_t rr, rm )
+        {
+            json_spirit::Object ores;
+            ores.push_back( Pair("priority", rr.second->priority()) );
+            ores.push_back( Pair("message", rr.second->message()) );
+            string presence = "";
+            if(m_presences.find(rr.second->presence()) != m_presences.end())
+                presence = m_presences[rr.second->presence()];
+            ores.push_back( Pair("presence", presence) );
+
+            oresources.push_back( Pair( rr.first, ores ) );
+        }
+        o.push_back( Pair("resources", oresources) );
+        a.push_back( o );
+    }
+    return a;
 }
 
 /// GLOOXY CALLBACKS FOLLOW

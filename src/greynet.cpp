@@ -837,12 +837,21 @@ greynet::anon_http_handler(const playdar_request& req, playdar_response& resp,
 }
 
 
-
-
-
-
-
-
+bool
+greynet::authed_http_handler(const playdar_request& req, playdar_response& resp, playdar::auth& pauth) 
+{
+    if( req.parts().size() > 1 && req.parts()[1] == "get_roster" )
+    {
+        using namespace json_spirit;
+        Array a = m_jbot->get_roster();
+        ostringstream os;
+        write_formatted( a, os );
+        resp = playdar_response( os.str(), false );
+        return true;
+    }
+    
+    return false;
+}
 
 EXPORT_DYNAMIC_CLASS( greynet )
 

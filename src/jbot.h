@@ -26,8 +26,12 @@
 #include <gloox/siprofilefthandler.h>
 #include <gloox/bytestreamdatahandler.h>
 #include <gloox/error.h>
+#include <gloox/presence.h>
+#include <gloox/rosteritem.h>
 
 #include <boost/function.hpp>
+
+#include "json_spirit/json_spirit.h"
 
 #ifndef _WIN32
 # include <unistd.h>
@@ -43,8 +47,9 @@
 #endif
 /// Basic jabber bot using gloox, that detects other nodes that have 
 /// playdar:resolver capabilities using disco and makes it easy to msg them all.
-/// This class doesn't know playdar (except declaring an XMPP feature called "playdar:resolver")
-/// and it doesn't know JSON.. external API we use just passes strings in and out.
+/// This class doesn't know playdar (except declaring an XMPP feature called "playdar:resolver") and playdar doesnt know any gloox objects. just json and
+/// strings pass back and forth
+
 class jbot 
  :  public gloox::RosterListener, 
     public gloox::DiscoHandler,
@@ -65,7 +70,8 @@ class jbot
     void set_new_peer_callback( boost::function<void(const std::string& jid)> cb);
     void clear_msg_received_callback();
     const std::string& jid() const { return m_jid; }
-    
+    json_spirit::Array get_roster();
+
     /// GLOOX IMPLEMENTATION STUFF FOLLOWS
     
     virtual void onConnect();
@@ -106,6 +112,8 @@ class jbot
     gloox::Client *j;
     std::string m_jid, m_pass, m_server;
     unsigned short m_port;
+    // presence type to string helper:
+    std::map< gloox::Presence::PresenceType , std::string > m_presences;
     
     struct PlaydarPeer
     {
