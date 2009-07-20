@@ -364,17 +364,20 @@ void
 jbot::handleRosterPresence( const RosterItem& item, const std::string& resource,
         Presence::PresenceType presence, const std::string& /*msg*/ )
 {
+    JID jid( item.jid() );
+    jid.setResource( resource );
+    
     // does this presence mean they are offline/un-queryable:
     if ( presence == Presence::Unavailable ||
             presence == Presence::Error ||
             presence == Presence::Invalid )
     {
-        printf( "//////presence received (->OFFLINE): %s/%s\n", item.jid().c_str(), resource.c_str() );
+        printf( "//////presence received (->OFFLINE): %s\n", jid.full().c_str() );
         // remove peer from list, if he exists
         boost::mutex::scoped_lock lk(m_playdarpeers_mut);
-        if( m_playdarpeers.erase(item.jid()) )
+        if( m_playdarpeers.erase(jid.full()) )
         {
-            printf("Removed %s from playdarpeers\n", item.jid().c_str());
+            printf("Removed %s from playdarpeers\n", jid.full().c_str());
         }
         return;
     }
@@ -390,8 +393,6 @@ jbot::handleRosterPresence( const RosterItem& item, const std::string& resource,
     printf( "//////presence received (->ONLINE) %s/%s -- %d\n",
      item.jid().c_str(),resource.c_str(), presence );
     
-    JID jid( item.jid() );
-    jid.setResource( resource );
     // /resource HACK: gtalk filters unrecognised disco features
     // so we assume they are playdar-capable if resource contains "playdar"
     if( jid.resource().find( "playdar" ) != string::npos )
