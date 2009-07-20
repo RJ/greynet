@@ -382,17 +382,30 @@ jbot::handleRosterPresence( const RosterItem& item, const std::string& resource,
     // have just changed their status to Away or something asinine.
     {
         boost::mutex::scoped_lock lk(m_playdarpeers_mut);
-        if( m_playdarpeers.find(item.jid()) != m_playdarpeers.end() )
+        if( m_playdarpeers.count(item.jid()) )
         {
             return; // already online and in our list.
         }
     }
     printf( "//////presence received (->ONLINE) %s/%s -- %d\n",
      item.jid().c_str(),resource.c_str(), presence );
-     
-    // Disco them to check if they are playdar-capable
+    
     JID jid( item.jid() );
     jid.setResource( resource );
+    // /resource HACK: gtalk filters unrecognised disco features
+    // so we assume they are playdar-capable if resource contains "playdar"
+    if( jid.resource().find( "playdar" ) != string::npos )
+    {
+        boost::mutex::scoped_lock lk(m_playdarpeers_mut);
+        if( m_playdarpeers.count(jid.full()) == 0 )
+        {
+            printf("Adding '%s' to playdarpeers\n", jid.full().c_str());
+            m_playdarpeers.insert( jid.full() );
+            if( m_new_peer_cb ) m_new_peer_cb( jid.full() );
+        }
+    }
+    
+    // Disco them to check if they are playdar-capable
     //printf( "DISCOing: %s \n", jid.full().c_str() );
     j->disco()->getDiscoInfo( jid, "", this, 0 );
 }
@@ -434,9 +447,7 @@ jbot::handleNonrosterPresence( const Presence& presence )
 void 
 jbot::handleDiscoInfo( const JID& from, const Disco::Info& info, int context)
 {
-    if ( info.hasFeature("playdar:resolver") 
-         || from.resource().find( "playdar") != string::npos ) 
-         // /resource HACK: gtalk filters unrecognised disco features :( 
+    if ( info.hasFeature("playdar:resolver") )
     {
         boost::mutex::scoped_lock lk(m_playdarpeers_mut);
         if( m_playdarpeers.count(from.full()) == 0 )
