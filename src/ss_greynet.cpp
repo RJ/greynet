@@ -8,6 +8,7 @@
 
 
 using namespace std;
+using namespace libf2f;
 
 namespace playdar {
 namespace resolvers {

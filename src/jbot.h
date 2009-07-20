@@ -30,6 +30,7 @@
 #include <gloox/rosteritem.h>
 
 #include <boost/function.hpp>
+#include <boost/thread/mutex.hpp>
 
 #include "json_spirit/json_spirit.h"
 
@@ -41,6 +42,7 @@
 #include <locale.h>
 #include <string>
 #include <vector>
+#include <set>
 
 #if defined( WIN32 ) || defined( _WIN32 )
 # include <windows.h>
@@ -50,6 +52,11 @@
 /// This class doesn't know playdar (except declaring an XMPP feature called "playdar:resolver") and playdar doesnt know any gloox objects. just json and
 /// strings pass back and forth
 
+namespace playdar{ namespace resolvers{ 
+class greynet;
+} }
+
+
 class jbot 
  :  public gloox::RosterListener, 
     public gloox::DiscoHandler,
@@ -58,7 +65,7 @@ class jbot
     gloox::LogHandler
 {
   public:
-    jbot(std::string jid, std::string pass, std::string server, unsigned short port);
+    jbot(std::string jid, std::string pass, std::string server, unsigned short port, playdar::resolvers::greynet* g);
     virtual ~jbot() {}
     
     /// Our bot api used in the resolver (note, no gloox types passed in/out)
@@ -109,19 +116,20 @@ class jbot
     /// END DISCO STUFF
 
   private:
+    
     gloox::Client *j;
     std::string m_jid, m_pass, m_server;
     unsigned short m_port;
     // presence type to string helper:
     std::map< gloox::Presence::PresenceType , std::string > m_presences;
     
-    struct PlaydarPeer
-    {
-        gloox::JID jid;
-        // stats or preferences here later, maybe.
-    };
-    std::vector< PlaydarPeer > m_playdarpeers; // who is online with playdar capabilities
+    // who is online with playdar capabilities:
+    std::set<std::string> m_playdarpeers;
+    boost::mutex m_playdarpeers_mut;
+    
     boost::function<void(const std::string&, const std::string&)> m_msg_received_callback;
     boost::function<void(const std::string& jid)> m_new_peer_cb;
+
+    playdar::resolvers::greynet* m_greynet;
 };
 #endif

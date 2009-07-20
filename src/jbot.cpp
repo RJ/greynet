@@ -2,12 +2,14 @@
 #include <boost/foreach.hpp>
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
+#include "greynet.h"
 
 using namespace gloox;
 using namespace std;
 
-jbot::jbot(std::string jid, std::string pass, std::string server, unsigned short port)
-        : m_jid(jid), m_pass(pass), m_server(server), m_port(port) 
+jbot::jbot(std::string jid, std::string pass, std::string server, unsigned short port, playdar::resolvers::greynet* g)
+        : m_jid(jid), m_pass(pass), m_server(server), m_port(port),
+        m_greynet(g)
 {
     m_presences[Presence::Available]  = "available";
     m_presences[Presence::Chat]   ="chat";
@@ -97,10 +99,12 @@ void
 jbot::broadcast_msg( const std::string& msg )
 {
     const string subject = "";
-    BOOST_FOREACH( PlaydarPeer& p, m_playdarpeers )
+    boost::mutex::scoped_lock lk(m_playdarpeers_mut);
+    BOOST_FOREACH( const string& jidstr, m_playdarpeers )
     {
-        printf("Dispatching query to: %s\n", p.jid.full().c_str() );
-        Message m(Message::Chat, p.jid, msg, subject);
+        printf("Dispatching query to: %s\n", jidstr.c_str() );
+        JID jid(jidstr);
+        Message m(Message::Chat, jid, msg, subject);
         j->send( m );
     }
 }
@@ -136,24 +140,45 @@ jbot::get_roster()
         if( ri.second->subscription() != S10nBoth ) continue;
         json_spirit::Object o;
         o.push_back( Pair("jid", ri.first) );
-        o.push_back( Pair("jid_bare", ri.second->jid()) );
+        //o.push_back( Pair("jid_bare", ri.second->jid()) );
         o.push_back( Pair("name", ri.second->name()) );
         o.push_back( Pair("online",  ri.second->online()) );
         json_spirit::Object oresources;
+        // Resources for this jid:
         //ResourceMap rm = ri.second->resources();
+        JID jid( ri.first );
         std::map<std::string, Resource*> rm = ri.second->resources();
         BOOST_FOREACH( rp_t rr, rm )
         {
+            jid.setResource( rr.first );
             json_spirit::Object ores;
+            ores.push_back( Pair("jid_full", jid.full()) );
+            bool cap = false;
+            {
+                boost::mutex::scoped_lock lk(m_playdarpeers_mut);
+                cap = m_playdarpeers.count(jid.full()) == 1;
+            }
+            ores.push_back( Pair("playdar-capable", cap) );
+            bool cond = (bool)(m_greynet->router()->get_connection_by_name(jid.full()));
+            ores.push_back( Pair("playdar-connected", cond) );
             ores.push_back( Pair("priority", rr.second->priority()) );
             ores.push_back( Pair("message", rr.second->message()) );
             string presence = "";
             if(m_presences.find(rr.second->presence()) != m_presences.end())
                 presence = m_presences[rr.second->presence()];
             ores.push_back( Pair("presence", presence) );
-
+            // extensions:
+            StanzaExtensionList sexlist = rr.second->extensions();
+            Array sexArray;
+            BOOST_FOREACH( const StanzaExtension* sex, sexlist )
+            {
+                sexArray.push_back( sex->tag()->xml() );
+            }
+            
+            ores.push_back( Pair("extensions", sexArray) );
             oresources.push_back( Pair( rr.first, ores ) );
         }
+        
         o.push_back( Pair("resources", oresources) );
         a.push_back( o );
     }
@@ -293,25 +318,38 @@ jbot::handleItemUpdated( const JID& jid )
 void 
 jbot::handleRoster( const Roster& roster )
 {
-    printf( "roster arriving: " );
+    printf( "roster arriving: \n" );
     Roster::const_iterator it = roster.begin();
     for ( ; it != roster.end(); ++it )
     {
         if ( (*it).second->subscription() != S10nBoth ) continue;
-        j->disco()->getDiscoInfo( (*it).second->jid(), "", this, 0 );
+        printf("JID: %s\n", (*it).second->jid().c_str());
+        
+        /*
+        // only disco after getting presence:
+        JID jid = (*it).second->jid();
+        // disco query all jid's resources:
+        RosterItem::ResourceMap::const_iterator rit;
+        for ( rit = (*it).second->resources().begin() ; 
+              rit != (*it).second->resources().end(); 
+              ++rit )
+        {
+            jid.setResource((*rit).first);
+            printf( "* DISCO: %s \n", jid.full().c_str() );
+            j->disco()->getDiscoInfo( jid, "", this, 0 );
+        }
+        */
         /*
         printf( "jid: %s, name: %s, subscription: %d\n",
                 (*it).second->jid().c_str(), (*it).second->name().c_str(),
                 (*it).second->subscription() );
         */
-        printf("%s ", (*it).second->jid().c_str());
-        StringList g = (*it).second->groups();
-        StringList::const_iterator it_g = g.begin();
+        
+        //StringList g = (*it).second->groups();
+        //StringList::const_iterator it_g = g.begin();
         //for ( ; it_g != g.end(); ++it_g )
         //    printf( "\tgroup: %s\n", (*it_g).c_str() );
-        RosterItem::ResourceMap::const_iterator rit = (*it).second->resources().begin();
-        for ( ; rit != (*it).second->resources().end(); ++rit )
-            printf( "resource: %s ", (*rit).first.c_str() );
+        
     }
     printf("\n");
 }
@@ -333,29 +371,29 @@ jbot::handleRosterPresence( const RosterItem& item, const std::string& resource,
     {
         printf( "//////presence received (->OFFLINE): %s/%s\n", item.jid().c_str(), resource.c_str() );
         // remove peer from list, if he exists
-        for(std::vector<PlaydarPeer>::iterator  it = m_playdarpeers.begin();
-            it != m_playdarpeers.end(); ++it )
+        boost::mutex::scoped_lock lk(m_playdarpeers_mut);
+        if( m_playdarpeers.erase(item.jid()) )
         {
-            if( it->jid == item.jid() )
-            {
-                printf("Removing from playdarpeers\n");
-                m_playdarpeers.erase( it );
-                break;
-            }
+            printf("Removed %s from playdarpeers\n", item.jid().c_str());
         }
         return;
     }
     // If they just became available, disco them, otherwise ignore - they may
     // have just changed their status to Away or something asinine.
-    BOOST_FOREACH( PlaydarPeer & p, m_playdarpeers )
     {
-        if( p.jid == item.jid() ) return; // already online and in our list.
+        boost::mutex::scoped_lock lk(m_playdarpeers_mut);
+        if( m_playdarpeers.find(item.jid()) != m_playdarpeers.end() )
+        {
+            return; // already online and in our list.
+        }
     }
     printf( "//////presence received (->ONLINE) %s/%s -- %d\n",
      item.jid().c_str(),resource.c_str(), presence );
+     
     // Disco them to check if they are playdar-capable
     JID jid( item.jid() );
     jid.setResource( resource );
+    //printf( "DISCOing: %s \n", jid.full().c_str() );
     j->disco()->getDiscoInfo( jid, "", this, 0 );
 }
 
@@ -396,41 +434,26 @@ jbot::handleNonrosterPresence( const Presence& presence )
 void 
 jbot::handleDiscoInfo( const JID& from, const Disco::Info& info, int context)
 {
-    //printf("///////// handleDiscoInfo!\n");
     if ( info.hasFeature("playdar:resolver") 
-         || from.resource().find( "playdar") != string::npos ) // HACK, gtalk filters unrecognised disco features, apparently :|
+         || from.resource().find( "playdar") != string::npos ) 
+         // /resource HACK: gtalk filters unrecognised disco features :( 
     {
-        printf( "Found contact with playdar capabilities! '%s'\n", from.full().c_str() );
-        bool found = false;
-        BOOST_FOREACH( PlaydarPeer p, m_playdarpeers )
+        boost::mutex::scoped_lock lk(m_playdarpeers_mut);
+        if( m_playdarpeers.count(from.full()) == 0 )
         {
-            if( p.jid.full() == from.full() )
-            {
-                found = true;
-                break;
-            }
+            printf("DISCO-response '%s' playdar = YES\n", from.full().c_str());
+            printf("Adding '%s' to playdarpeers\n", from.full().c_str());
+            m_playdarpeers.insert( from.full() );
+            if( m_new_peer_cb ) m_new_peer_cb( from.full() );
+        }else{
+            printf("DISCO-response '%s' playdar = YES, already found\n", from.full().c_str());
         }
-        if( !found )
-        {
-            PlaydarPeer p;
-            p.jid = from;
-            m_playdarpeers.push_back( p );
-            if( m_new_peer_cb )
-            {
-                m_new_peer_cb( from.full() );
-            }
-        }
+        
     }
-    /*
-    if( m_playdarpeers.size() )
+    else
     {
-        printf("Available playdar JIDs: \n");
-        BOOST_FOREACH( PlaydarPeer p, m_playdarpeers )
-        {
-            printf("* %s\n", p.jid.full().c_str() );
-        }
+        printf("DISCO-response '%s' playdar = NO\n", from.full().c_str());
     }
-    */
 }
 
 void 

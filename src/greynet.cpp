@@ -160,7 +160,7 @@ greynet::jabber_start(const string& jid, const string& pass,
         return;
     }
     // start xmpp connection in new thread:
-    m_jbot = boost::shared_ptr<jbot>(new jbot(jid, pass, server, port));
+    m_jbot = boost::shared_ptr<jbot>(new jbot(jid, pass, server, port, this));
     m_jbot->set_msg_received_callback( boost::bind(&greynet::jabber_msg_received, this, _1, _2) );
     m_jbot->set_new_peer_callback( boost::bind(&greynet::jabber_new_peer, this, _1) );
     // valid loglevels are "debug" "warning" "error"
@@ -173,7 +173,7 @@ greynet::jabber_start(const string& jid, const string& pass,
 void
 greynet::jabber_msg_received(const string& msg, const string& jid)
 {
-    cout << "Msg from '" << jid << "':" << endl << msg << endl;
+    cout << "* Msg from '" << jid << "':" << endl << msg << endl;
     // is this a new peer announcement?
     using namespace json_spirit;
     Value mv;
@@ -204,7 +204,7 @@ greynet::jabber_msg_received(const string& msg, const string& jid)
     }
     string peerip = m["peer_ip"].get_str();
     int peerport = m["peer_port"].get_int();
-    cout << "Jabber advertisment from '" << jid << "' greynet version '" 
+    cout << "* Got advertisment from '" << jid << "' greynet version '" 
          << m["playdar-greynet"].get_str() << "' peer: '"
          << peerip << ":" << peerport << "'" << endl;
     map<string,string> props;
@@ -216,31 +216,38 @@ greynet::jabber_msg_received(const string& msg, const string& jid)
 void
 greynet::jabber_new_peer(const string& jid)
 {
-    if( jid == m_jbot->jid() ) return;
-    cout << "New jabber peer reported: " << jid << endl;
+    ostringstream report;
+    report << "* New playdar-capable peer reported: " << jid;
+    if( jid == m_jbot->jid() )
+    {
+        report << " this is us, no action taken." << endl;
+    }
     // can't advertise if we dont have a public ip:
-    if( public_ip() == "" ) 
+    else if( public_ip() == "" ) 
     {
-        cout << "We are firewalled, can't advertise. Hope they have a port fwd instead.." << endl;
-        return;
+        report << " firewalled, not advertising" << endl;
     }
-    if( m_router->get_connection_by_name( jid ) )
+    else if( m_router->get_connection_by_name( jid ) )
     {
-        cout << "Already connected to this peer: " << jid << endl;
-        return;
+        report << " already connected, not advertising" << endl;
     }
-    // tell them our ip/port
-    string cookie = m_pap->gen_uuid();
-    m_peer_cookies[cookie] = jid;
-    using namespace json_spirit;
-    Object o;
-    o.push_back( Pair("playdar-greynet", "0.2") );
-    o.push_back( Pair("peer_ip", public_ip()) );
-    o.push_back( Pair("peer_port", m_port) );
-    o.push_back( Pair("cookie", cookie) );
-    ostringstream os;
-    write_formatted( o, os );
-    m_jbot->send_to( jid, os.str() );
+    else
+    {
+        // tell them our ip/port
+        string cookie = m_pap->gen_uuid();
+        m_peer_cookies[cookie] = jid;
+        using namespace json_spirit;
+        Object o;
+        o.push_back( Pair("playdar-greynet", "0.2") );
+        o.push_back( Pair("peer_ip", public_ip()) );
+        o.push_back( Pair("peer_port", m_port) );
+        o.push_back( Pair("cookie", cookie) );
+        ostringstream os;
+        write_formatted( o, os );
+        m_jbot->send_to( jid, os.str() );
+        report << " advertising how to connect to us" << endl;
+    }
+    cout << report.str();
 }
 
 /// end jabber stuff
@@ -262,6 +269,8 @@ greynet::new_incoming_connection( connection_ptr conn )
     // that expects it, and kills the connection otherwise.
     conn->push_message_received_cb( 
         boost::bind( &greynet::expect_ident, this, _1, _2, true ) );
+        
+    new_connection_watchdog( conn, 2000 );
     return true;
 }
 
@@ -273,6 +282,34 @@ greynet::new_outgoing_connection( connection_ptr conn )
     conn->push_message_received_cb( 
         boost::bind( &greynet::expect_ident, this, _1, _2, false) );
     send_ident( conn );
+    new_connection_watchdog( conn, 2000 );
+}
+
+void
+greynet::new_connection_watchdog( connection_ptr conn, size_t timeout )
+{
+    // setup a timer to kill the connection if they don't auth in time:
+    boost::shared_ptr<boost::asio::deadline_timer> 
+     t(new boost::asio::deadline_timer( *m_io_service ));
+    t->expires_from_now(boost::posix_time::milliseconds(timeout));
+    // pass the timer pointer to the handler so it doesnt autodestruct:
+    t->async_wait(boost::bind(&greynet::new_connection_timeout, this,
+                                boost::asio::placeholders::error, 
+                                conn, t));
+}
+
+void 
+greynet::new_connection_timeout(const boost::system::error_code& e,
+                            connection_ptr conn,
+                            boost::shared_ptr<boost::asio::deadline_timer> t)
+{
+    // if they didn't manage to auth by now, kill the connection:
+    if( !conn->ready() )
+    {
+        cout << "Killing connection for failing to auth in time: " 
+             << conn->str() << endl;
+        conn->fin();
+    }
 }
 
 /// inserted as msg handler for new connection
